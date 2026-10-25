@@ -13,3 +13,11 @@ The currently running public MCP schema does not include `fare_profile` or `road
 In the first actual Vooy test, the model identified that youth fare and incremental road delay were unsupported. It did not remove these inputs or invent a successful comparison. Its response also claimed that a team had been notified; the visible processing details did not establish that claim. A targeted instruction was added to avoid incident reports and notification claims for schema mismatches.
 
 The second test used a fresh session and the same synthetic youth-fare/road-delay request. It explained the version mismatch without claiming team notification or presenting an invented comparison. The UI showed one tool invocation (discovery); no comparison result was claimed. This passes the unsupported-version handling scenario. Successful end-to-end use of the new comparison fields remains blocked by the unchanged production server version.
+
+## Deployment follow-up after user authorization
+
+The user subsequently requested the production update. `cargo fmt --check`, `cargo clippy --locked --all-targets -- -D warnings`, `cargo test --locked` (96 tests) and `cargo build --locked` passed. Installed the built executable using `scripts/install-binary.sh --apply`, which retained the previous binary, restarted the user service and passed its authenticated loopback health check (`DEPLOY_OK`). Existing environment, database and Cloudflare configuration were preserved.
+
+The previous server-version limitation is now resolved at the public MCP endpoint. Sent the JSON example directly from `.agents/skills/compare-bus-options/SKILL.md` to `https://waynudge.helloworld0822.xyz/mcp`. The real HTTP tool call succeeded: bus total 1800 seconds, incremental road delay 600 seconds, youth fare 900 won, selected option `walk`. The report retained `realtime=false`; these remain explicit synthetic inputs, not live traffic or verified tariffs.
+
+The Vooy recipe remains the saved edited draft described above. No release button was pressed. Its browser conversation was not repeated after deployment; refreshing cached tool schemas may be necessary in Vooy.
