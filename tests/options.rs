@@ -13,6 +13,22 @@ use waynudge::{
     storage::Store,
 };
 type TestResult = Result<(), Box<dyn std::error::Error>>;
+
+#[test]
+fn synthetic_bus_traffic_fixture_keeps_youth_quote_and_adds_only_road_delay() -> TestResult {
+    let request = serde_json::from_str(include_str!("../examples/bus-traffic.json"))?;
+    let report = compare_travel_options(request)?;
+    let bus = report.scenarios[0]
+        .candidates
+        .iter()
+        .find(|candidate| candidate.id == "mock-bus")
+        .ok_or("missing bus")?;
+    assert_eq!(bus.total_seconds, 2580);
+    assert_eq!(bus.road_delay_seconds, 600);
+    assert_eq!(bus.cost_won, Some(850));
+    Ok(())
+}
+
 fn input() -> Result<TravelOptionsRequest, serde_json::Error> {
     serde_json::from_value(json!({
         "origin":{"name":"Reported current station","lat":37.5,"lon":127.0},
@@ -103,5 +119,62 @@ async fn public_mcp_can_compare_multiple_paths_without_saved_routine() -> TestRe
         "bus"
     );
     assert!(service.store.list("owner").await?.is_empty());
+    Ok(())
+}
+
+#[tokio::test]
+async fn public_mcp_applies_incremental_road_delay_and_child_fare() -> TestResult {
+    // Given: a synthetic delay not included in the bus baseline, plus explicit child fare.
+    let service = Service {
+        store: Store::open("sqlite::memory:").await?,
+        provider: Provider::mock(),
+    };
+    let auth = Auth::new(
+        HashMap::from([(
+            "owner".into(),
+            "traffic-owner-token-at-least-32-characters".into(),
+        )]),
+        None,
+    )?
+    .with_public_mcp(true);
+    let mut arguments = serde_json::to_value(input()?)?;
+    arguments["fare_profile"] = json!("child");
+    arguments["depart_at"] = json!("2026-10-25T08:00:00+09:00");
+    arguments["target_arrival"] = json!("2026-10-25T08:45:00+09:00");
+    arguments["options"][1]["road_traffic"] = json!({"kind":"synthetic","additional_seconds":900});
+    arguments["options"][1]["fares_won"] =
+        json!({"source":"synthetic fixture","adult":1500,"youth":800,"child":400});
+    let body = json!({"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"compare_travel_options","arguments":arguments}});
+    // When: the real MCP router handles the comparison.
+    let response = api::router(service, auth)
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/mcp")
+                .header("host", "localhost")
+                .header("content-type", "application/json")
+                .header("accept", "application/json, text/event-stream")
+                .body(Body::from(serde_json::to_vec(&body)?))?,
+        )
+        .await?;
+    assert_eq!(response.status(), StatusCode::OK);
+    let body: Value = serde_json::from_slice(&to_bytes(response.into_body(), 1_048_576).await?)?;
+    let report = &body["result"]["structuredContent"];
+    // Then: road traffic reverses the previous high-congestion selection and updates arrival exactly once.
+    assert_eq!(report["scenarios"][1]["selected_option_id"], "subway");
+    let bus = report["scenarios"][1]["candidates"]
+        .as_array()
+        .ok_or("missing candidates")?
+        .iter()
+        .find(|candidate| candidate["id"] == "bus")
+        .ok_or("missing bus")?;
+    assert_eq!(bus["road_delay_seconds"], 900);
+    assert_eq!(bus["total_seconds"], 3240);
+    assert_eq!(bus["cost_won"], 400);
+    assert_eq!(bus["fare_profile"], "child");
+    assert_eq!(bus["fare_verified"], false);
+    assert_eq!(bus["applied_road_traffic"]["kind"], "synthetic");
+    assert_eq!(bus["meets_target"], false);
+    assert_eq!(bus["arrival_at"], "2026-10-25T08:54:00+09:00");
     Ok(())
 }

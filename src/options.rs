@@ -1,11 +1,16 @@
 mod evaluation;
+mod fares;
 mod model;
+mod traffic;
 mod validation;
 
 pub use model::{
     RouteDataSource, TravelOption, TravelOptionCandidate, TravelOptionsReport,
     TravelOptionsRequest, TravelOptionsScenario,
 };
+
+pub use fares::{FareProfile, FareQuotes};
+pub use traffic::{BusCrowding, BusObservation, Observation, RoadTraffic};
 
 use crate::error::{Error, Result};
 
@@ -16,6 +21,7 @@ pub fn compare_travel_options(input: TravelOptionsRequest) -> Result<TravelOptio
         let mut candidates = Vec::with_capacity(input.options.len());
         let mut warnings = Vec::new();
         for option in &input.options {
+            warnings.extend(option.traffic_warnings(input.depart_at));
             let candidate = match option.evaluate(&input, *percent) {
                 Ok(candidate) => candidate,
                 Err(Error::Invalid(reason)) => {
@@ -24,6 +30,17 @@ pub fn compare_travel_options(input: TravelOptionsRequest) -> Result<TravelOptio
                 }
                 Err(error) => return Err(error),
             };
+            if candidate.cost_won.is_none()
+                && match input.fare_profile {
+                    FareProfile::Adult => option.fares_won.is_some(),
+                    FareProfile::Youth | FareProfile::Child => true,
+                }
+            {
+                warnings.push(format!(
+                    "{}: fare is unknown for the requested profile; no age discount is inferred.",
+                    option.id
+                ));
+            }
             if let Some(warning) = option.calibration_warning(input.walking_speed_kmh) {
                 warnings.push(warning);
             }
@@ -87,7 +104,7 @@ pub fn compare_travel_options(input: TravelOptionsRequest) -> Result<TravelOptio
         warnings: vec![
             source_warning.into(),
             "Congestion percentages use an unvalidated planning policy, not live observations or arrival guarantees. Train occupancy does not measure station pedestrian density.".into(),
-            "Bus road traffic and missed-vehicle waiting are not modeled; supplied vehicle time is preserved. Known-distance walking is corrected for speed and rounded up to whole minutes.".into(),
+            "Road delay is applied only as explicitly supplied additional seconds beyond the route baseline; never resend traffic already included in total_minutes. Missing, stale or future observations add no delay. Bus boarding_unavailable excludes the option; zero seats permits standing unless require_bus_seat is set. Missed-vehicle waiting is unknown and not modeled. Caller observations and fare quotes are not server-verified live data. Crowded buses are excluded only when avoid_crowded_bus is set; no crowding delay or probability is invented. Known-distance walking is corrected for speed and rounded up to whole minutes.".into(),
         ],
     })
 }
@@ -131,3 +148,6 @@ fn select<'a>(
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod tests_traffic;

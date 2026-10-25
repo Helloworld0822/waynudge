@@ -11,6 +11,9 @@ impl TravelOption {
         request: &TravelOptionsRequest,
         congestion_percent: f64,
     ) -> Result<TravelOptionCandidate> {
+        let bus = self.bus_at(request)?;
+        let road = self.road_at(request.depart_at);
+        let road_delay_seconds = road.map_or(0, |(_, seconds)| seconds);
         let speed = request
             .walking_speed_kmh
             .filter(|_| !self.missing_station_distance());
@@ -57,18 +60,42 @@ impl TravelOption {
             .into_iter()
             .next()
             .ok_or_else(|| invalid("simulation did not return the requested scenario"))?;
+        let total_seconds = scenario
+            .calculation
+            .trip_seconds_with_buffer
+            .checked_add(road_delay_seconds)
+            .ok_or_else(|| invalid("road-adjusted trip duration out of range"))?;
+        let arrival = request
+            .depart_at
+            .map(|start| {
+                start
+                    .checked_add_signed(chrono::Duration::seconds(i64::from(total_seconds)))
+                    .ok_or_else(|| invalid("road-adjusted arrival out of range"))
+            })
+            .transpose()?;
+        let (cost_won, fare_source) = self.fare(request.fare_profile);
         Ok(TravelOptionCandidate {
             id: self.id.clone(),
             label: self.label.clone(),
             mode: self.mode,
-            total_seconds: scenario.calculation.trip_seconds_with_buffer,
+            total_seconds,
+            road_delay_seconds,
+            applied_bus_observation: bus.cloned(),
+            applied_road_traffic: road.map(|(traffic, _)| traffic.clone()),
+            fare_profile: request.fare_profile,
+            fare_source,
+            fare_verified: false,
             walk_seconds: walk_minutes * 60 + scenario.calculation.walking_buffer_seconds,
             walking_buffer_seconds: scenario.calculation.walking_buffer_seconds,
             train_dwell_buffer_seconds: scenario.calculation.train_dwell_buffer_seconds,
             transfers: self.transfers,
-            cost_won: self.cost_won,
-            arrival_at: scenario.arrival_at_with_buffer,
-            meets_target: scenario.meets_target_in_scenario,
+            cost_won,
+            arrival_at: arrival
+                .map(|at| crate::service::local(at.with_timezone(&chrono::Utc)))
+                .transpose()?,
+            meets_target: arrival
+                .zip(request.target_arrival)
+                .map(|(arrival, target)| arrival <= target),
         })
     }
 

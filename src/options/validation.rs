@@ -44,6 +44,8 @@ impl TravelOptionsRequest {
 
 impl TravelOption {
     fn validate(&self) -> Result<()> {
+        self.validate_traffic()?;
+        self.validate_fares()?;
         text(&self.id)?;
         text(&self.label)?;
         if !(1..=1440).contains(&self.total_minutes)

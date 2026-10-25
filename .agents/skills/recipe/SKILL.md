@@ -23,6 +23,12 @@ description: WayNudge의 임의 혼잡도 시뮬레이션으로 버스·지하�
 
 `congestion_percentages`에는 요청한 0~400% 가정치를 넣는다. 확인된 보행 프로필 또는 `record_walking_observation` 미리보기의 속도가 있으면 `walking_speed_kmh`로 전달하며 시간만으로 추정하지 않는다. `depart_at`, `target_arrival`, `current_option_id`, `preferred_modes`, `max_walk_minutes`, `max_transfers`는 확인한 조건만 보낸다. 혼잡도는 지하철·혼합 후보의 역내 도보·열차 정차 여유에만 적용되며 버스 도로 지연으로 해석하지 않는다.
 
+버스·혼합 후보에만 선택적으로 `bus_observation={observation:{source,observed_at,valid_for_seconds},crowding,remaining_seats}`를 보낸다. `source`는 호출자가 확인한 출처 이름, `observed_at`은 오프셋 포함 관측 시각, 유효기간은 1~3600초다. `depart_at`을 기준으로 관측 시각부터 유효기간 끝까지 적용하며 출발 시각 누락·미래 관측·만료 자료는 경고와 함께 무시한다. 서버가 검증한 실시간 자료라고 말하지 않는다. `crowding`은 `available`, `crowded`, `boarding_unavailable` 중 하나다. 탑승 불가능 후보는 제외하고 다음 버스 대기 시간을 추정하지 않는다. 잔여 좌석 0은 입석 탑승 불가를 뜻하지 않는다. 사용자가 착석을 요구할 때만 요청의 `require_bus_seat=true`를 사용하고, 혼잡 버스를 피하려 할 때만 `avoid_crowded_bus=true`로 `crowded` 후보를 제외한다. 좌석 수는 0~200이며 양수 좌석과 `boarding_unavailable`을 함께 보내지 않는다.
+
+도로 지연은 `road_traffic={kind:"observed",observation:{source,observed_at,valid_for_seconds},additional_seconds}` 또는 명시적 가정인 `{kind:"synthetic",additional_seconds:600}`을 사용한다. `additional_seconds`는 0~86400이며 **`total_minutes`에 아직 포함되지 않은 추가 지연만** 보낸다. 지도 예상 시간에 이미 포함된 정체를 다시 더하지 않는다. 두 종류를 동시에 보낼 수 없으며 지하철·도보 후보에는 적용하지 않는다. 혼잡도 백분율에서 버스 지연 확률이나 시간을 만들어내지 않는다. 결과의 `road_delay_seconds`, `applied_road_traffic`, `applied_bus_observation`으로 실제 적용 여부·출처를 확인한다.
+
+요금 비교에는 요청별 `fare_profile=adult|youth|child`를 사용한다(생략 시 adult). 각 후보의 `fares_won={source,adult,youth,child}`에는 확인된 원 단위 금액만 보낸다(각 금액 생략 가능, 0~1000000). 예: 테스트에서는 `{source:"synthetic fixture",adult:1500,youth:850,child:450}`처럼 가상값임을 밝힌다. 기존 `cost_won`은 성인 요금의 호환용 대체값만 된다. 청소년·어린이 요금이 없으면 `cost_won=null`이며 성인 요금에 임의 할인율을 곱하지 않는다. `fare_source`와 `fare_verified=false`를 함께 설명하고 연령·자격을 추정하지 않는다. 이 설정은 `compare_travel_options` 요청에만 적용되며 저장 루틴이나 `get_commute_brief`의 공급자 요금을 바꾸지 않는다.
+
 “그냥 테스트”에는 `data_source=mock`과 명시적인 합성 장소로 지하철 30분(도보 8분·600m, 역내 4분·300m, 8정차·1환승), 버스 33분(도보 5분·400m, 0환승), 혼합 32분(도보 7분·500m, 역내 3분·200m, 4정차·1환승), 도보 40분(3,000m) 네 후보와 혼잡도 [80,150,200]을 사용할 수 있다. 위치·시간·거리는 실제 관측이 아닌 테스트 가정이라고 밝힌다.
 
 응답의 각 `scenarios`에서 `candidates`의 `total_seconds`·`walk_seconds`·환승·요금, `selected_option_id`, `should_switch`, `reason`, 경고를 설명한다. 출발·목표 시각이 있을 때만 도착과 목표 충족 여부를 안내한다. 테스트 결과로 실제 경로를 자동 변경하거나 루틴을 저장하지 않는다.

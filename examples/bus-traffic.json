@@ -1,0 +1,97 @@
+{
+  "origin": {
+    "name": "Synthetic current location",
+    "lat": 37.5,
+    "lon": 127.0
+  },
+  "destination": {
+    "name": "Synthetic destination",
+    "lat": 37.52,
+    "lon": 127.02
+  },
+  "data_source": "mock",
+  "options": [
+    {
+      "id": "mock-subway",
+      "label": "Synthetic subway",
+      "mode": "subway",
+      "total_minutes": 30,
+      "walk_minutes": 8,
+      "walk_distance_meters": 600,
+      "station_walk_minutes": 4,
+      "station_walk_distance_meters": 300,
+      "remaining_train_stops": 8,
+      "transfers": 1,
+      "cost_won": 1550,
+      "fares_won": {
+        "source": "synthetic fixture; not an actual tariff",
+        "adult": 1550,
+        "youth": 900,
+        "child": 500
+      }
+    },
+    {
+      "id": "mock-bus",
+      "label": "Synthetic bus",
+      "mode": "bus",
+      "total_minutes": 33,
+      "walk_minutes": 5,
+      "walk_distance_meters": 400,
+      "transfers": 0,
+      "cost_won": 1500,
+      "road_traffic": {
+        "kind": "synthetic",
+        "additional_seconds": 600
+      },
+      "fares_won": {
+        "source": "synthetic fixture; not an actual tariff",
+        "adult": 1500,
+        "youth": 850,
+        "child": 450
+      }
+    },
+    {
+      "id": "mock-mixed",
+      "label": "Synthetic bus and subway",
+      "mode": "mixed",
+      "total_minutes": 32,
+      "walk_minutes": 7,
+      "walk_distance_meters": 500,
+      "station_walk_minutes": 3,
+      "station_walk_distance_meters": 200,
+      "remaining_train_stops": 4,
+      "transfers": 1,
+      "cost_won": 1700,
+      "fares_won": {
+        "source": "synthetic fixture; not an actual tariff",
+        "adult": 1700,
+        "youth": 1100,
+        "child": 700
+      }
+    },
+    {
+      "id": "mock-walk",
+      "label": "Synthetic walking",
+      "mode": "walk",
+      "total_minutes": 40,
+      "walk_minutes": 40,
+      "walk_distance_meters": 3000,
+      "transfers": 0,
+      "cost_won": 0,
+      "fares_won": {
+        "source": "synthetic fixture; not an actual tariff",
+        "adult": 0,
+        "youth": 0,
+        "child": 0
+      }
+    }
+  ],
+  "congestion_percentages": [
+    80,
+    150,
+    200
+  ],
+  "walking_speed_kmh": 5,
+  "current_option_id": "mock-subway",
+  "fare_profile": "youth"
+}

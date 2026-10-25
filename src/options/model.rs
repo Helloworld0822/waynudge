@@ -27,6 +27,13 @@ pub struct TravelOptionsRequest {
     pub preferred_modes: Vec<Mode>,
     pub max_walk_minutes: Option<u32>,
     pub max_transfers: Option<u32>,
+    /// Require a fresh positive remaining-seat observation on every bus-containing option.
+    #[serde(default)]
+    pub require_bus_seat: bool,
+    #[serde(default)]
+    pub avoid_crowded_bus: bool,
+    #[serde(default)]
+    pub fare_profile: super::FareProfile,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, JsonSchema)]
@@ -46,6 +53,9 @@ pub struct TravelOption {
     #[serde(default)]
     pub transfers: u32,
     pub cost_won: Option<u32>,
+    pub fares_won: Option<super::FareQuotes>,
+    pub bus_observation: Option<super::BusObservation>,
+    pub road_traffic: Option<super::RoadTraffic>,
 }
 
 #[derive(Clone, Debug, Serialize, JsonSchema)]
@@ -57,6 +67,12 @@ pub struct TravelOptionCandidate {
     pub walk_seconds: u32,
     pub walking_buffer_seconds: u32,
     pub train_dwell_buffer_seconds: u32,
+    pub road_delay_seconds: u32,
+    pub fare_profile: super::FareProfile,
+    pub fare_source: Option<String>,
+    pub fare_verified: bool,
+    pub applied_bus_observation: Option<super::BusObservation>,
+    pub applied_road_traffic: Option<super::RoadTraffic>,
     pub transfers: u32,
     pub cost_won: Option<u32>,
     pub arrival_at: Option<String>,
