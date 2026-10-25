@@ -11,11 +11,26 @@ pub struct BusProvider {
 }
 impl BusProvider {
     pub fn new(kind: BusKind, key: String, daily_limit: u32) -> Result<Self> {
+        let key = key.trim().to_string();
         if key.trim().is_empty() || key.len() > 512 || key.bytes().any(|c| !c.is_ascii_graphic()) {
             return Err(invalid(
                 "invalid public data service key; use the Decoding key",
             ));
         }
+        let key = if key.contains('%') {
+            let encoded = reqwest::Url::parse(&format!("https://localhost/?serviceKey={key}"))
+                .map_err(|_| invalid("invalid encoded public data service key"))?;
+            let pairs = encoded.query_pairs().collect::<Vec<_>>();
+            if pairs.len() != 1 {
+                return Err(invalid("invalid encoded public data service key"));
+            }
+            pairs
+                .first()
+                .map(|(_, value)| value.to_string())
+                .ok_or_else(|| invalid("missing public data service key"))?
+        } else {
+            key
+        };
         Ok(Self {
             kind,
             key,

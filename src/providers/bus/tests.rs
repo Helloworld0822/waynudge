@@ -1,5 +1,13 @@
 use super::*;
 use serde_json::json;
+#[test]
+fn copied_encoded_key_is_trimmed_and_decoded_once() -> Result<()> {
+    // Given / When
+    let client = BusProvider::new(BusKind::Tago, " test%2Bkey%2F%3D \n".into(), 10)?;
+    // Then
+    assert_eq!(client.key, "test+key/=");
+    Ok(())
+}
 fn query(kind: BusKind) -> BusQuery {
     BusQuery {
         provider: kind,
