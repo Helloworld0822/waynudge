@@ -1,5 +1,7 @@
 # Vooy 레시피 실행 검증
 
+이 문서는 이전 레시피 버전의 기록입니다. 이후 실측 보행과 여러 경로를 추가한 결과는 [추가 검증](walking-options.md)을 참고하세요.
+
 2026-10-25, 실제 Chrome을 Playwright로 제어하여 작성·저장·실행했습니다.
 
 - 레시피: [WayNudge 혼잡도 테스트](https://app.vooy.com/ko/recipes/c88690b0-2608-4bce-ad37-3256524d52e7)
