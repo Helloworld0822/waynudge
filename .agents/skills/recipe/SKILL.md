@@ -1,15 +1,33 @@
 ---
 name: recipe
-description: WayNudge의 임의 지하철 혼잡도 시뮬레이션을 실행하고 역내 도보·열차 정차 추가시간과 도보 대안을 비교한다. 혼잡도 테스트나 가상 지연 실험 요청에 사용한다.
+description: WayNudge의 임의 혼잡도 시뮬레이션으로 버스·지하철·혼합·도보 경로를 비교한다. 혼잡도 테스트나 가상 지연 실험 요청에 사용한다.
 ---
 
 # 혼잡도 테스트 레시피
 
 사용자가 혼잡도 테스트·시뮬레이션·가상 지연을 요청하면 이 테스트 모드를 먼저 적용한다. 실제 루틴, 저장된 장소, 실제 교통 API를 조회하거나 변경하지 않는다. 사용자가 "임의로", "기본값으로", "그냥 테스트"라고 하면 아래 값을 바로 사용하고 추가로 질문하지 않는다.
 
-## 실행
+## 공통 입력 검사
 
-도구를 찾거나 호출하기 전에 입력 범위를 검사한다. 혼잡도에 -10% 등 0~400% 밖의 값이 하나라도 있으면 도구를 호출하지 말고 허용 범위를 안내한다. 이 경우 연결 장애가 아니므로 서비스가 응답하지 않는다거나 팀에 알렸다고 말하지 않는다. 사용자가 주지 않은 정상 값으로 자동 재시도하지 않는다.
+도구를 찾거나 호출하기 전에 입력 범위를 검사한다. 혼잡도에 -10% 등 0~400% 밖의 값이 하나라도 있으면 도구를 호출하지 말고 허용 범위를 안내한다. 이 경우 연결 장애가 아니므로 서비스가 응답하지 않는다거나 팀에 알렸다고 말하지 않는다. 사용자가 주지 않은 정상 값으로 자동 재시도하지 않는다. 이 검사는 여러 경로 비교와 단일 지하철 테스트 모두에 적용한다.
+
+두 도구 모두 `source=simulation`, `realtime=false`, `validated_prediction=false`이며 가정 계산이다. 여러 경로는 `scenarios[].candidates[]`의 `total_seconds`, `walk_seconds`를, 단일 지하철은 `scenarios[].calculation.trip_seconds_with_buffer`를 표시한다. 서로 다른 응답 필드를 섞지 않는다.
+
+## 여러 경로 비교
+
+버스를 포함해 여러 경로나 현재 위치에서의 대안을 비교하면 `compare_travel_options`를 사용한다. 단일 지하철의 승차 가능 조건만 실험하면 아래 `simulate_congestion`을 유지한다. 두 도구 모두 가정 비교이며 실제 지연·지연 확률이 아니다.
+
+실제 경로 비교 요청은 사용자가 확인한 현재 위치와 목적지를 받는다. 호스트 모델의 지도 경로 도구가 있으면 같은 두 지점 사이의 버스·지하철·혼합·도보 후보를 가져와 `data_source=user_provided_map`으로 전달한다. 제공되지 않은 수단·거리·환승·요금·열차 정차 수는 만들지 않는다. 지도 도구가 없으면 사용자에게 후보를 받아야 하며 새 지도 API 키를 요구하지 않는다. 합성 후보를 실제 경로 대신 제시하지 않는다.
+
+`origin`, `destination`은 이름·좌표이며 현재 위치는 GPS나 대화 배경에서 추정하지 않는다. `options`의 각 후보에는 `id`, `label`, `mode`, `total_minutes`, `walk_minutes`를 보낸다. 확인된 경우 `walk_distance_meters`, `station_walk_minutes`, `station_walk_distance_meters`, `remaining_train_stops`, `transfers`, `cost_won`을 보낸다. 역내 도보는 전체 도보의 일부이고 전체 도보는 전체 시간의 일부이며 중복 합산하지 않는다. 없는 거리는 생략한다. `walk` 후보는 전체 시간이 도보 시간과 같고 열차 정차·역내 도보는 0이다.
+
+`congestion_percentages`에는 요청한 0~400% 가정치를 넣는다. 확인된 보행 프로필 또는 `record_walking_observation` 미리보기의 속도가 있으면 `walking_speed_kmh`로 전달하며 시간만으로 추정하지 않는다. `depart_at`, `target_arrival`, `current_option_id`, `preferred_modes`, `max_walk_minutes`, `max_transfers`는 확인한 조건만 보낸다. 혼잡도는 지하철·혼합 후보의 역내 도보·열차 정차 여유에만 적용되며 버스 도로 지연으로 해석하지 않는다.
+
+“그냥 테스트”에는 `data_source=mock`과 명시적인 합성 장소로 지하철 30분(도보 8분·600m, 역내 4분·300m, 8정차·1환승), 버스 33분(도보 5분·400m, 0환승), 혼합 32분(도보 7분·500m, 역내 3분·200m, 4정차·1환승), 도보 40분(3,000m) 네 후보와 혼잡도 [80,150,200]을 사용할 수 있다. 위치·시간·거리는 실제 관측이 아닌 테스트 가정이라고 밝힌다.
+
+응답의 각 `scenarios`에서 `candidates`의 `total_seconds`·`walk_seconds`·환승·요금, `selected_option_id`, `should_switch`, `reason`, 경고를 설명한다. 출발·목표 시각이 있을 때만 도착과 목표 충족 여부를 안내한다. 테스트 결과로 실제 경로를 자동 변경하거나 루틴을 저장하지 않는다.
+
+## 단일 지하철 조건 실행
 
 연결된 WayNudge MCP(`https://waynudge.helloworld0822.xyz/mcp`, Vooy에서는 `rmcp`)의 `simulate_congestion`을 호출한다. 서비스 검색이 필요한 환경이면 해당 연결의 최신 도구 목록에서 먼저 찾는다. `get_subway_congestion`은 공식 통계 조회이므로 이 가상 테스트의 대체 도구로 사용하지 않는다.
 
@@ -32,7 +50,9 @@ description: WayNudge의 임의 지하철 혼잡도 시뮬레이션을 실행하
 
 사용자가 출발 시각과 목표 도착 시각을 주면 서울 시간의 오프셋 포함 ISO 8601로 `depart_at`, `context.target_arrival`에 전달한다. 사용자가 승강장까지 걷는 시간과 다음 열차까지 남은 시간을 주면 `boarding.walk_minutes`, `boarding.train_departure_after_seconds`에 전달한다. 시간과 승강장 조건이 없으면 해당 조건은 생략하고 가능한지 추정하지 않는다.
 
-## 응답
+실제 “A에서 B까지 N분 걸었다”는 관측으로 보행 속도를 저장하려는 요청은 `manage-routine`의 보행 보정 절차로 연결한다. 사용자 측정 또는 호스트 지도 도보 경로의 실제 거리와 시간이 있어야 하며 직선거리나 분 단위 시간만으로 속도를 추정하지 않는다. `record_walking_observation`의 `confirmed=false` 미리보기 후 명시적인 동의·인증으로 본인 루틴에만 저장한다. 이 시뮬레이션의 가상 도보시간을 실제 관측으로 저장하지 않는다.
+
+## 단일 지하철 응답
 
 첫 줄에 "임의 혼잡도를 넣은 테스트 결과입니다"라고 밝힌다. 도구 응답의 혼잡도별 기본 시간, `walking_buffer_seconds`, `train_dwell_buffer_seconds`, `trip_seconds_with_buffer`를 짧은 표로 보여준다. 도보 대안이 있으면 `walking_alternative`의 시간과 비교 결과를 덧붙인다. 출발·도착·승차 조건을 입력한 경우에만 해당 결과도 안내한다.
 

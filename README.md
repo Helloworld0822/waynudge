@@ -156,9 +156,11 @@ curl --fail-with-body -H "Authorization: Bearer $TOKEN" \
 | `upsert_routine` | `POST /api/routines` |
 | `get_commute_brief` | `POST /api/brief` |
 | `compare_routes` | `POST /api/compare` |
+| `compare_travel_options` | `POST /api/routes/options` |
 | `replan_trip` | `POST /api/replan` |
 | `set_routine_day_status` | `POST /api/day-status` |
 | `record_trip_feedback` | `POST /api/feedback` |
+| `record_walking_observation` | `POST /api/walking/observations` |
 | `get_subway_arrivals` | `POST /api/subway/arrivals` |
 | `get_subway_congestion` | `POST /api/subway/congestion` |
 | `simulate_congestion` | `POST /api/simulate/congestion` |
@@ -174,6 +176,24 @@ curl --fail-with-body -H "Authorization: Bearer $TOKEN" \
 - `manage-routine`: “금요일은 재택으로 바꿔줘.”
 
 스킬은 먼저 루틴을 조회하고, 서버 결과를 한국어로 설명합니다. 위치를 추적하거나 출발 시각을 자체 계산하지 않습니다.
+
+### 실제 보행으로 속도 보정
+
+“A에서 B까지 12분 걸었어”에는 **실제 걸은 거리**도 필요합니다. 사용자 측정값(`user_measured`)이나 호스트 지도 도보 경로 도구로 확인한 거리(`map_walking_route`)를 사용합니다. 시간만으로 속도를 추정하거나 좌표의 직선거리를 보행 거리로 대신하지 않습니다. 거리를 확인하지 못하면 기존 추정치를 유지합니다.
+
+`record_walking_observation`에 출발·도착 장소, `distance_meters`, `elapsed_minutes`, `distance_source`, `routine_id`, 고유한 `observation_id`, `confirmed=false`를 보내 먼저 미리 봅니다. 공개 MCP 미리보기는 저장 루틴·프로필을 조회하지 않습니다. 저장할 관측과 적용 루틴을 요약해 명시적 동의를 받은 뒤 사용자 Bearer 인증으로 `confirmed=true`를 보냅니다. 본인 소유 루틴에만 저장할 수 있고 재시도에는 같은 `observation_id`를 사용합니다. HTTP 대응 API는 미리보기도 인증이 필요합니다.
+
+실측 1km를 12분에 걸으면 5km/h이며, 이 속도로 이후 도보 500m는 6분으로 계산합니다. 저장된 관측의 총거리/총시간으로 보행 속도를 갱신하고 `walking_speed_kmh`를 거리 기반 도보·환승에 적용합니다. 버스·열차 운행시간에는 적용하지 않고 거리 없는 구간은 기존 `walking_factor`를 사용합니다. 반대 방향, 경사·계단·신호대기에서는 실제 시간이 달라질 수 있습니다.
+
+[`examples/walking-observation.json`](examples/walking-observation.json)은 합성 장소와 “사용자가 실제 1,000m를 측정했다”는 가정의 **미리보기 전용** 예시입니다. 좌표에서 거리를 계산한 것이 아니며 실제 사용자 기록이 아닙니다. 운영 데이터로 저장하지 마세요. MCP 도구 목록은 총 14개이며 연결 앱이 이전 목록을 캐시했다면 새로고침해야 합니다. 저장소 스킬 변경은 Vooy 웹사이트의 스킬 수정과 별개입니다.
+
+### 현재 위치에서 버스·지하철·도보 대안 비교
+
+`compare_travel_options`는 같은 출발·목적지 사이의 버스·지하철·혼합·도보 후보를 받아 혼잡도 가정별로 비교합니다. 이동 중에는 사용자가 확인한 현재 위치를 출발점으로 씁니다. 호스트 모델의 지도 도구에서 실제 여러 경로를 가져오거나 사용자가 제공한 후보를 `data_source=user_provided_map`으로 보냅니다. 서버는 새 지도 API 키를 요구하거나 지도를 직접 조회하지 않으며 GPS 위치도 추정하지 않습니다. 실제 후보가 없으면 사용자에게 경로 정보를 요청합니다.
+
+입력은 `origin`, `destination`, `options`, `congestion_percentages`이며 각 후보의 전체 시간에는 도보 시간이 포함됩니다. 도보 시간에는 역내 도보가 포함되므로 중복해서 더하지 않습니다. 확인된 거리와 보행 프로필/미리보기 속도(`walking_speed_kmh`)가 있으면 도보만 보정하고 버스·열차 운행시간은 유지합니다. 지하철·혼합의 역내 도보·열차 정차 여유를 가정하며 버스 도로 지연을 추정하지 않습니다. 현재 후보·선호 수단·도보/환승 제한·출발/목표 시각을 함께 전달할 수 있습니다.
+
+[`examples/travel-options.json`](examples/travel-options.json)은 네 수단의 **합성 경로** 비교 예시입니다. `data_source=mock`이며 좌표·요금·거리·시간은 실제 지도 결과가 아닙니다. 결과는 `source=simulation`, `realtime=false`, `validated_prediction=false`이고 `scenarios`별 후보와 `selected_option_id`, `should_switch`, `reason`, 경고를 반환합니다. 실제 지연이나 탑승·도착을 보장하지 않습니다. 공개 MCP에서는 인증 없이 순수 비교가 가능하고 HTTP 대응 API는 Bearer 인증이 필요합니다. 어떤 루틴도 저장하거나 자동 변경하지 않습니다.
 
 ## 무료 임시 HTTPS 터널
 
