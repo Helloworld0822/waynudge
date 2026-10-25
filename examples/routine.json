@@ -1,0 +1,19 @@
+{
+  "routine": {
+    "id": "morning-commute",
+    "name": "평일 출근 예시",
+    "origin": { "name": "서울역 예시", "lat": 37.5547, "lon": 126.9707 },
+    "destination": { "name": "강남역 예시", "lat": 37.4979, "lon": 127.0276 },
+    "arrival_time": "09:00",
+    "weekdays": [1, 2, 3, 4, 5],
+    "preferred_modes": ["subway", "bus", "mixed"],
+    "max_transfers": 2,
+    "max_walk_minutes": 20,
+    "buffer_minutes": 10,
+    "preparation_minutes": 30,
+    "min_alert_interval_minutes": 15,
+    "walking_factor": 1.0,
+    "usual_route_id": null
+  },
+  "confirmed": false
+}
