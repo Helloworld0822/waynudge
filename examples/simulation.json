@@ -1,0 +1,17 @@
+{
+  "congestion_percentages": [80, 150, 200],
+  "context": {
+    "base_trip_minutes": 40,
+    "station_walk_minutes": 6,
+    "remaining_train_stops": 10,
+    "walking_factor": 1.0,
+    "target_arrival": "2026-10-26T09:00:00+09:00",
+    "buffer_minutes": 0
+  },
+  "depart_at": "2026-10-26T08:19:00+09:00",
+  "boarding": {
+    "walk_minutes": 6,
+    "train_departure_after_seconds": 390
+  },
+  "walking_alternative_minutes": 41
+}

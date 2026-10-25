@@ -135,7 +135,7 @@ async fn seven_tools_are_callable_over_stateless_json_http() -> TestResult {
             .as_array()
             .ok_or("missing tools")?
             .len(),
-        11
+        12
     );
     let calls = [
         (

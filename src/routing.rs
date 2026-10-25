@@ -5,6 +5,7 @@ use crate::{
 use chrono::{DateTime, Utc};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+pub mod simulation;
 
 #[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
 pub struct Route {

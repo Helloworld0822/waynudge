@@ -100,6 +100,18 @@ impl Mcp {
             .map_err(tool_error)
     }
 
+    #[tool(description="TEST ONLY: simulate user-supplied congestion percentages, station walking slowdown and train dwell buffers. Compare assumed arrival, boarding and walking-alternative feasibility. No external API, real delay observations, probabilities, or saved-routine changes.",output_schema=schema_for_type::<crate::routing::simulation::SimulationReport>(),annotations(read_only_hint=true))]
+    async fn simulate_congestion(
+        &self,
+        context: RequestContext<RoleServer>,
+        Parameters(input): Parameters<crate::routing::simulation::SimulationRequest>,
+    ) -> Result<Json<crate::routing::simulation::SimulationReport>, ErrorData> {
+        user(&context)?;
+        crate::routing::simulation::simulate(input)
+            .map(Json)
+            .map_err(tool_error)
+    }
+
     #[tool(description = "Create or update a commute routine after explicit user confirmation.",
         output_schema = schema_for_type::<MutationResult>(),
         annotations(read_only_hint = false, destructive_hint = false, idempotent_hint = true))]
@@ -227,38 +239,5 @@ fn tool_error(error: Error) -> ErrorData {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn structured_schemas_when_tools_are_listed() {
-        // Given: the registered MCP tools.
-        let router = Mcp::tool_router();
-        // When: a client discovers their schemas.
-        let tools = router.list_all();
-        // Then: each tool declares structured output and no caller-supplied identity.
-        assert_eq!(tools.len(), 11);
-        for tool in tools {
-            assert!(tool.output_schema.is_some(), "{}", tool.name);
-            assert!(
-                tool.input_schema
-                    .get("properties")
-                    .and_then(|properties| properties.get("user_id"))
-                    .is_none(),
-                "{}",
-                tool.name
-            );
-        }
-    }
-
-    #[test]
-    fn storage_details_are_redacted_when_operation_fails() {
-        // Given: an internal storage failure containing sensitive data.
-        let error = Error::Storage(sqlx::Error::Protocol("private database details".into()));
-        // When: the boundary converts it to an MCP error.
-        let response = tool_error(error);
-        // Then: the response contains only the public storage error.
-        assert_eq!(response.message, "storage unavailable");
-        assert!(response.data.is_none());
-    }
-}
+#[path = "mcp/tests.rs"]
+mod tests;

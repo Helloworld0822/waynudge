@@ -29,7 +29,7 @@ async fn public_mcp_connects_without_exposing_or_modifying_personal_routines() -
             .as_array()
             .ok_or("missing tools")?
             .len(),
-        11
+        12
     );
     let listed=request(app.clone(),"/mcp",None,Some(json!({"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"list_routines","arguments":{}}}))).await?;
     assert_eq!(
