@@ -21,7 +21,7 @@
 | 1분 빠른 대안 유지 | `holds_for_one_minute_saving` |
 | 큰 지연 시 변경 | `switches_for_large_fresh_delay`, `simulated_delay_changes_route_and_enqueues_disruption_alert` |
 | 환승 실패 시 현재 위치에서 제외 경로 없이 재탐색 | `missed_transfer_replans_only_from_reported_origin` |
-| API 오류에 Mock 실시간 결과를 만들지 않음 | `http_failure_is_private_and_consumes_quota` (실제 로컬 HTTP 503 fixture) |
+| API 오류에 Mock 실시간 결과를 만들지 않음 | `http_failure_is_private_and_consumes_quota` (실제 로컬 HTTP 502 fixture) |
 | 휴가·설정 공휴일·자정 경계 제외 | `departure_and_alerts_follow_exclusions_and_deduplication`, `configured_holiday_suppresses_alert_until_explicit_override`, `overnight_alert_uses_arrival_date_exclusion` |
 | 중복·최소 간격·동시 처리·재시작 영속성 | `alerts_deduplicate_and_space_across_midnight_and_kinds`, `concurrent_connections_emit_once_and_survive_reopening` |
 | 사용자 격리·변경 확인 | `routines_are_isolated_when_ids_overlap`, `authentication_and_confirmation_protect_http_data` |
