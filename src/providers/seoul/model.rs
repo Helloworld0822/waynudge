@@ -68,6 +68,7 @@ pub struct SubwayArrivals {
 #[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
 pub struct SubwayBoarding {
     pub access_minutes: u32,
+    pub access_walk_minutes: u32,
     pub station_name: String,
     pub line_id: Option<String>,
     pub direction: Option<Direction>,

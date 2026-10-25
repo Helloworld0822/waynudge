@@ -68,6 +68,9 @@ pub(super) fn parse(payload: Payload, origin: &Place, destination: &Place) -> Re
             return Err(Error::Provider);
         }
         for leg in path.sub_path {
+            if leg.section_time > path.info.total_time {
+                return Err(Error::Provider);
+            }
             if !leg.distance.is_finite() || leg.distance < 0.0 {
                 return Err(Error::Provider);
             }
@@ -87,6 +90,7 @@ pub(super) fn parse(payload: Payload, origin: &Place, destination: &Place) -> Re
                         };
                         boarding = Some(seoul::SubwayBoarding {
                             access_minutes: elapsed,
+                            access_walk_minutes: walk,
                             station_name: leg.start_name.clone(),
                             line_id,
                             direction,

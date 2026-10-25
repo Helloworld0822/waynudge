@@ -134,6 +134,7 @@ impl Provider {
                     subway_boarding: match mode {
                         Mode::Subway | Mode::Mixed => Some(seoul::SubwayBoarding {
                             access_minutes: walk_minutes,
+                            access_walk_minutes: walk_minutes,
                             station_name: "Mock subway station".into(),
                             line_id: Some("1001".into()),
                             direction: Some(seoul::Direction::Up),
