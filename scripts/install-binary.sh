@@ -18,7 +18,9 @@ done
 [[ $# == 4 ]] || usage
 candidate=$1 target=$2 service=$3 health_url=$4
 [[ $target == /* && $service != -* && $service == *.service ]] || usage
-[[ $health_url == http://127.0.0.1:*/* || $health_url == http://localhost:*/* ]] || usage
+[[ $health_url =~ ^http://(127\.0\.0\.1|localhost):([0-9]{1,5})/[^[:space:]]*$ ]] || usage
+port=${BASH_REMATCH[2]}
+(( 10#$port >= 1 && 10#$port <= 65535 )) || usage
 if $rollback; then candidate=$target.previous; fi
 [[ -f $candidate && ! -L $candidate && -s $candidate ]] || { echo 'Candidate must be a nonempty regular file' >&2; exit 2; }
 [[ -f $target && ! -L $target && -x $target ]] || { echo 'Target must be an existing executable regular file' >&2; exit 2; }

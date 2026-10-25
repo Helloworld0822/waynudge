@@ -30,6 +30,11 @@ args=("$sandbox/candidate" "$TEST_TARGET" waynudge-test.service http://127.0.0.1
 "$script" "${args[@]}"
 [[ $(cat "$TEST_TARGET") == old && ! -e $TEST_TARGET.previous && ! -e $TEST_CALLS && ! -e $TEST_TARGET.deploy.lock ]]
 echo 'PASS dry-run: no binary, backup, lock or service mutation'
+for invalid_url in 'http://127.0.0.1:8080@attacker.example/health' 'http://localhost:0/health' 'http://localhost:65536/health' $'http://localhost:8080/health\r\nInjected: yes'; do
+  if "$script" --apply "${args[@]:0:3}" "$invalid_url"; then exit 1; fi
+  [[ $(cat "$TEST_TARGET") == old && ! -e $TEST_TARGET.previous && ! -e $TEST_CALLS ]]
+done
+echo 'PASS unsafe health URLs rejected before mutation'
 "$script" --apply "${args[@]}"
 [[ $(cat "$TEST_TARGET") == new && $(cat "$TEST_TARGET.previous") == old ]]
 echo 'PASS install: candidate installed, prior binary backed up, auth header received on stdin'
