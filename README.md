@@ -12,7 +12,7 @@ Rust로 실행하는 개인 출퇴근 의사결정 서버입니다. 저장한 �
 | `src/routines.rs`, `src/storage.rs` | 루틴 검증과 사용자별 SQLite 저장 |
 | `src/providers.rs`, `src/providers/odsay.rs` | 모의 경로와 ODsay 연동 |
 | `src/scheduler.rs`, `src/alerts.rs` | 주기 평가와 중복 억제 수신함 |
-| `.agents/skills/` | 한국어 출퇴근·재탐색·루틴 관리 스킬 |
+| `.agents/skills/` | 한국어 출퇴근·재탐색·루틴 관리·버스 혼잡/정체/연령별 요금 비교 스킬 |
 | `examples/routine.json` | 확인 전 상태의 루틴 등록 예시 |
 | `docs/verification.md` | 실제 실행한 검증 결과와 제한 사항 |
 
