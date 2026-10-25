@@ -19,6 +19,8 @@ pub struct Route {
     pub delay_minutes: u32,
     pub origin: Place,
     pub destination: Place,
+    #[serde(default)]
+    pub subway_boarding: Option<crate::providers::seoul::SubwayBoarding>,
 }
 #[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
 pub struct RouteSet {

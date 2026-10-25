@@ -48,6 +48,8 @@ pub fn router(service: Service, auth: Auth) -> Router {
         .route("/api/day-status", post(day_status))
         .route("/api/feedback", post(feedback))
         .route("/api/alerts", get(alerts))
+        .route("/api/subway/arrivals", post(subway_arrivals))
+        .route("/api/bus/arrivals", post(bus_arrivals))
         .route("/api/alerts/evaluate", post(evaluate))
         .nest_service("/mcp", mcp)
         .with_state(service)
@@ -57,6 +59,18 @@ pub fn router(service: Service, auth: Auth) -> Router {
             Duration::from_secs(30),
         ))
         .layer(middleware::from_fn_with_state(auth, auth::authenticate))
+}
+async fn subway_arrivals(
+    State(s): State<Service>,
+    Json(query): Json<crate::providers::seoul::SubwayQuery>,
+) -> Result<Json<crate::providers::seoul::SubwayArrivals>> {
+    s.provider.subway_arrivals(&query).await.map(Json)
+}
+async fn bus_arrivals(
+    State(s): State<Service>,
+    Json(query): Json<crate::providers::bus::BusQuery>,
+) -> Result<Json<crate::providers::bus::BusArrivals>> {
+    s.provider.bus_arrivals(&query).await.map(Json)
 }
 async fn health(State(s): State<Service>) -> Result<Json<serde_json::Value>> {
     s.store.health().await?;

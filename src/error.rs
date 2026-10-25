@@ -23,6 +23,14 @@ pub enum Error {
     Json(#[from] serde_json::Error),
 }
 pub type Result<T> = std::result::Result<T, Error>;
+pub const PUBLIC_USER: &str = "__waynudge_public__";
+pub fn private_access(user: &str) -> Result<()> {
+    if user == PUBLIC_USER {
+        Err(Error::Unauthorized)
+    } else {
+        Ok(())
+    }
+}
 #[derive(Serialize)]
 struct ErrorBody {
     error: String,

@@ -8,13 +8,14 @@ use crate::{
 use chrono::{DateTime, Datelike, Duration, FixedOffset, TimeZone, Utc};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use std::collections::HashSet;
+#[path = "service/boarding.rs"]
+mod boarding;
+pub use boarding::BoardingAdvice;
 
 #[derive(Clone)]
 pub struct Service {
     pub store: Store,
     pub provider: Provider,
-    pub holidays: HashSet<String>,
 }
 #[derive(Clone, Debug, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -66,6 +67,7 @@ pub struct Brief {
     pub prepare_at: Option<String>,
     pub estimated_arrival_if_leaving_now: Option<String>,
     pub late_if_leaving_now: bool,
+    pub boarding: Option<BoardingAdvice>,
     pub comparison: Comparison,
 }
 pub fn seoul() -> Result<FixedOffset> {
@@ -78,15 +80,18 @@ impl Service {
         })
     }
     pub async fn upsert(&self, user: &str, input: UpsertRequest) -> Result<MutationResult> {
+        crate::error::private_access(user)?;
         confirmed(input.confirmed)?;
         self.store.upsert(user, &input.routine).await?;
         Ok(MutationResult { saved: true })
     }
     pub async fn set_day(&self, user: &str, input: DayStatus) -> Result<MutationResult> {
+        crate::error::private_access(user)?;
         self.store.set_day(user, &input).await?;
         Ok(MutationResult { saved: true })
     }
     pub async fn feedback(&self, user: &str, input: Feedback) -> Result<MutationResult> {
+        crate::error::private_access(user)?;
         self.store.feedback(user, &input).await?;
         Ok(MutationResult { saved: true })
     }
@@ -161,7 +166,6 @@ impl Service {
                 routine
                     .weekdays
                     .contains(&day.weekday().number_from_monday())
-                    && !self.holidays.contains(&input.date)
             });
         let comparison = if active {
             let mut routes = self
@@ -206,6 +210,7 @@ impl Service {
             }
             None => (None, None, None, false),
         };
+        let boarding = boarding::advice(&comparison, &routine, leave.as_deref(), now)?;
         Ok(Brief {
             routine_id: routine.id,
             date: input.date,
@@ -216,6 +221,7 @@ impl Service {
             prepare_at: prepare,
             estimated_arrival_if_leaving_now: arrival,
             late_if_leaving_now: late,
+            boarding,
             comparison,
         })
     }

@@ -1,12 +1,7 @@
-use std::{
-    collections::{HashMap, HashSet},
-    env,
-    time::Duration,
-};
+use std::{collections::HashMap, env};
 use waynudge::{
     api::{self, Auth},
     providers::Provider,
-    routines::date,
     service::Service,
     storage::Store,
 };
@@ -24,7 +19,8 @@ async fn main() -> anyhow::Result<()> {
             )
         })?)
         .map_err(|_| anyhow::anyhow!("WAYNUDGE_USERS must be a JSON map"))?;
-    let auth = Auth::new(users, env::var("PUBLIC_HOST").ok())?;
+    let auth = Auth::new(users, env::var("PUBLIC_HOST").ok())?
+        .with_public_mcp(env::var("PUBLIC_MCP").is_ok_and(|value| value == "true"));
     let provider = match env::var("TRANSIT_PROVIDER")
         .unwrap_or_else(|_| "mock".into())
         .as_str()
@@ -45,14 +41,34 @@ async fn main() -> anyhow::Result<()> {
         )?,
         _ => anyhow::bail!("TRANSIT_PROVIDER must be mock or odsay"),
     };
-    let holidays: HashSet<String> = env::var("HOLIDAYS")
-        .unwrap_or_default()
-        .split(',')
-        .filter(|s| !s.is_empty())
-        .map(str::to_string)
-        .collect();
-    for holiday in &holidays {
-        date(holiday)?;
+    let provider = match env::var("SEOUL_SUBWAY_API_KEY") {
+        Ok(key) if !key.trim().is_empty() => provider.with_seoul(
+            key,
+            env::var("SEOUL_SUBWAY_DAILY_LIMIT")
+                .unwrap_or_else(|_| "1000".into())
+                .parse()?,
+        )?,
+        Ok(_) | Err(_) => provider,
+    };
+    let mut provider = provider;
+    let tago_key = env::var("TAGO_SERVICE_KEY").unwrap_or_default();
+    let gyeonggi_key = env::var("GYEONGGI_SERVICE_KEY")
+        .ok()
+        .filter(|key| !key.trim().is_empty())
+        .unwrap_or_else(|| tago_key.clone());
+    for (kind, key) in [
+        (waynudge::providers::bus::BusKind::Tago, tago_key),
+        (waynudge::providers::bus::BusKind::Gyeonggi, gyeonggi_key),
+    ] {
+        if !key.trim().is_empty() {
+            provider = provider.with_bus(
+                kind,
+                key,
+                env::var("BUS_DAILY_LIMIT")
+                    .unwrap_or_else(|_| "1000".into())
+                    .parse()?,
+            )?;
+        }
     }
     let service = Service {
         store: Store::open(
@@ -60,7 +76,6 @@ async fn main() -> anyhow::Result<()> {
         )
         .await?,
         provider,
-        holidays,
     };
     let bind: std::net::SocketAddr = env::var("BIND_ADDR")
         .unwrap_or_else(|_| "127.0.0.1:8080".into())
@@ -68,18 +83,8 @@ async fn main() -> anyhow::Result<()> {
     let listener = tokio::net::TcpListener::bind(bind).await?;
     let app = api::router(service.clone(), auth);
     tracing::info!(address=%bind,"WayNudge listening");
-    let scheduler = async move {
-        let mut interval = tokio::time::interval(Duration::from_secs(60));
-        let mut checked = HashMap::new();
-        loop {
-            interval.tick().await;
-            if service.scheduler_tick(&mut checked).await.is_err() {
-                tracing::warn!("scheduler unavailable");
-            }
-        }
-    };
     let server = axum::serve(listener, app).with_graceful_shutdown(shutdown());
-    tokio::select! {result=server=>result?,()=scheduler=>{}}
+    server.await?;
     Ok(())
 }
 async fn shutdown() {

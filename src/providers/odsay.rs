@@ -34,6 +34,8 @@ struct Leg {
     end_name: String,
     #[serde(default)]
     lane: Vec<Lane>,
+    #[serde(default)]
+    way_code: Option<u32>,
 }
 #[derive(Deserialize, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -54,6 +56,8 @@ pub(super) fn parse(payload: Payload, origin: &Place, destination: &Place) -> Re
     }
     let mut routes = Vec::new();
     for path in paths {
+        let mut boarding = None;
+        let mut elapsed = 0_u32;
         let (mut subway, mut bus, mut walk, mut legs) = (false, false, 0_u32, 0_u32);
         let mut identity = Sha256::new();
         if path.sub_path.is_empty()
@@ -69,6 +73,26 @@ pub(super) fn parse(payload: Payload, origin: &Place, destination: &Place) -> Re
             }
             match leg.traffic_type {
                 1 => {
+                    if boarding.is_none() {
+                        let line_id = leg
+                            .lane
+                            .first()
+                            .and_then(|lane| lane.subway_code)
+                            .filter(|code| (1..=9).contains(code))
+                            .map(|code| format!("{}", 1000 + code));
+                        let direction = match leg.way_code {
+                            Some(1) => Some(seoul::Direction::Up),
+                            Some(2) => Some(seoul::Direction::Down),
+                            Some(_) | None => None,
+                        };
+                        boarding = Some(seoul::SubwayBoarding {
+                            access_minutes: elapsed,
+                            station_name: leg.start_name.clone(),
+                            line_id,
+                            direction,
+                            live: None,
+                        });
+                    }
                     subway = true;
                     legs += 1;
                 }
@@ -85,6 +109,7 @@ pub(super) fn parse(payload: Payload, origin: &Place, destination: &Place) -> Re
                 serde_json::to_vec(&(leg.traffic_type, leg.start_name, leg.end_name, leg.lane))
                     .map_err(|_| Error::Provider)?;
             identity.update(encoded);
+            elapsed = elapsed.saturating_add(leg.section_time);
         }
         if walk > path.info.total_time || legs == 0 {
             return Err(Error::Provider);
@@ -106,6 +131,7 @@ pub(super) fn parse(payload: Payload, origin: &Place, destination: &Place) -> Re
             delay_minutes: 0,
             origin: origin.clone(),
             destination: destination.clone(),
+            subway_boarding: boarding,
         });
     }
     Ok(RouteSet {

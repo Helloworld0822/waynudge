@@ -85,6 +85,14 @@ async fn departure_and_alerts_follow_exclusions_and_deduplication() -> TestResul
         brief.prepare_at.as_deref(),
         Some("2026-10-26T08:10:00+09:00")
     );
+    assert_eq!(
+        brief
+            .boarding
+            .as_ref()
+            .ok_or("missing boarding advice")?
+            .planned_board_at,
+        "2026-10-26T08:30:00+09:00"
+    );
     assert_eq!(service.evaluate_alerts("alice", now).await?, 1);
     assert_eq!(service.evaluate_alerts("alice", now).await?, 0);
     service
@@ -168,15 +176,16 @@ async fn overnight_alert_uses_arrival_date_exclusion() -> TestResult {
     Ok(())
 }
 #[tokio::test]
-async fn configured_holiday_suppresses_alert_until_explicit_override() -> TestResult {
+async fn explicit_date_override_enables_unscheduled_weekday() -> TestResult {
     // Given
-    let (_, mut service) = app().await?;
-    service.holidays.insert("2026-10-26".into());
+    let (_, service) = app().await?;
+    let mut routine = routine()?;
+    routine.weekdays = vec![2];
     service
         .upsert(
             "alice",
             UpsertRequest {
-                routine: routine()?,
+                routine,
                 confirmed: true,
             },
         )

@@ -3,6 +3,7 @@ pub mod api;
 pub mod error;
 pub mod mcp;
 pub mod providers;
+pub mod reminders;
 pub mod routines;
 pub mod routing;
 pub mod scheduler;

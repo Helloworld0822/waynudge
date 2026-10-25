@@ -21,6 +21,7 @@ pub struct User(pub String);
 pub struct Auth {
     tokens: Arc<Vec<(String, [u8; 32])>>,
     pub public_host: Option<String>,
+    pub public_mcp: bool,
 }
 impl Auth {
     pub fn new(users: HashMap<String, String>, public_host: Option<String>) -> Result<Self> {
@@ -31,6 +32,9 @@ impl Auth {
         let mut tokens = vec![];
         for (user, token) in users {
             text(&user)?;
+            if user == crate::error::PUBLIC_USER {
+                return Err(invalid("reserved user ID"));
+            }
             if token.len() < 32
                 || token.len() > 256
                 || !token.bytes().all(|b| b.is_ascii_graphic())
@@ -51,7 +55,12 @@ impl Auth {
         Ok(Self {
             tokens: Arc::new(tokens),
             public_host,
+            public_mcp: false,
         })
+    }
+    pub fn with_public_mcp(mut self, enabled: bool) -> Self {
+        self.public_mcp = enabled;
+        self
     }
 }
 pub async fn authenticate(State(auth): State<Auth>, mut request: Request, next: Next) -> Response {
@@ -60,15 +69,23 @@ pub async fn authenticate(State(auth): State<Auth>, mut request: Request, next: 
         .get(header::AUTHORIZATION)
         .and_then(|v| v.to_str().ok())
         .and_then(|v| v.strip_prefix("Bearer "));
-    let Some(token) = token else {
-        return unauthorized();
-    };
-    let digest: [u8; 32] = Sha256::digest(token.as_bytes()).into();
     let mut user = None;
-    for (id, expected) in auth.tokens.iter() {
-        if bool::from(digest.ct_eq(expected)) {
-            user = Some(User(id.clone()));
+    match token {
+        Some(token) => {
+            let digest: [u8; 32] = Sha256::digest(token.as_bytes()).into();
+            for (id, expected) in auth.tokens.iter() {
+                if bool::from(digest.ct_eq(expected)) {
+                    user = Some(User(id.clone()));
+                }
+            }
         }
+        None if auth.public_mcp
+            && !request.headers().contains_key(header::AUTHORIZATION)
+            && matches!(request.uri().path(), "/mcp" | "/mcp/") =>
+        {
+            user = Some(User(crate::error::PUBLIC_USER.into()))
+        }
+        None => {}
     }
     let Some(user) = user else {
         return unauthorized();

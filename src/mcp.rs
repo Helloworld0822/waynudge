@@ -42,6 +42,49 @@ impl Mcp {
             .map_err(tool_error)
     }
 
+    #[tool(description="Prepare a validated recurring commute reminder schedule and prompt for the host agent scheduler. Does not create an automation.",output_schema=schema_for_type::<crate::reminders::ReminderPlan>(),annotations(read_only_hint=true))]
+    async fn prepare_commute_reminder(
+        &self,
+        context: RequestContext<RoleServer>,
+        Parameters(input): Parameters<crate::reminders::ReminderRequest>,
+    ) -> Result<Json<crate::reminders::ReminderPlan>, ErrorData> {
+        self.service
+            .prepare_reminder(user(&context)?, input)
+            .await
+            .map(Json)
+            .map_err(tool_error)
+    }
+
+    #[tool(description="Get real-time TAGO or Gyeonggi bus arrival estimates using provider-specific station IDs. TAGO also requires city_code.",output_schema=schema_for_type::<crate::providers::bus::BusArrivals>(),annotations(read_only_hint=true))]
+    async fn get_bus_arrivals(
+        &self,
+        context: RequestContext<RoleServer>,
+        Parameters(input): Parameters<crate::providers::bus::BusQuery>,
+    ) -> Result<Json<crate::providers::bus::BusArrivals>, ErrorData> {
+        user(&context)?;
+        self.service
+            .provider
+            .bus_arrivals(&input)
+            .await
+            .map(Json)
+            .map_err(tool_error)
+    }
+
+    #[tool(description="Get Seoul subway arrival observations for a station, optionally filtered by line ID and direction. These are not whole-journey delay estimates.",output_schema=schema_for_type::<crate::providers::seoul::SubwayArrivals>(),annotations(read_only_hint=true))]
+    async fn get_subway_arrivals(
+        &self,
+        context: RequestContext<RoleServer>,
+        Parameters(input): Parameters<crate::providers::seoul::SubwayQuery>,
+    ) -> Result<Json<crate::providers::seoul::SubwayArrivals>, ErrorData> {
+        user(&context)?;
+        self.service
+            .provider
+            .subway_arrivals(&input)
+            .await
+            .map(Json)
+            .map_err(tool_error)
+    }
+
     #[tool(description = "Create or update a commute routine after explicit user confirmation.",
         output_schema = schema_for_type::<MutationResult>(),
         annotations(read_only_hint = false, destructive_hint = false, idempotent_hint = true))]
@@ -179,7 +222,7 @@ mod tests {
         // When: a client discovers their schemas.
         let tools = router.list_all();
         // Then: each tool declares structured output and no caller-supplied identity.
-        assert_eq!(tools.len(), 7);
+        assert_eq!(tools.len(), 10);
         for tool in tools {
             assert!(tool.output_schema.is_some(), "{}", tool.name);
             assert!(

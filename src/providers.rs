@@ -13,12 +13,21 @@ use std::{
     time::{Duration, Instant},
 };
 use tokio::sync::Mutex;
+pub mod bus;
+mod live;
+mod live_http;
+pub mod seoul;
+use bus::{BusArrivals, BusKind, BusProvider, BusQuery};
+use seoul::{SeoulSubway, SubwayArrivals, SubwayQuery};
 
 const ENDPOINT: &str = "https://api.odsay.com/v1/api/searchPubTransPathT";
 #[derive(Clone)]
 pub struct Provider {
     external: Option<Arc<ODsay>>,
     mock_delay_minutes: u32,
+    seoul: Option<SeoulSubway>,
+    tago: Option<BusProvider>,
+    gyeonggi: Option<BusProvider>,
 }
 struct ODsay {
     key: String,
@@ -39,6 +48,9 @@ impl Provider {
         Self {
             external: None,
             mock_delay_minutes: 0,
+            seoul: None,
+            tago: None,
+            gyeonggi: None,
         }
     }
     pub fn mock_with_delay(minutes: u32) -> Result<Self> {
@@ -48,6 +60,9 @@ impl Provider {
         Ok(Self {
             external: None,
             mock_delay_minutes: minutes,
+            seoul: None,
+            tago: None,
+            gyeonggi: None,
         })
     }
     pub fn odsay(api_key: String, daily_limit: u32, cache_seconds: u64) -> Result<Self> {
@@ -63,6 +78,9 @@ impl Provider {
             .map_err(|_| Error::Provider)?;
         Ok(Self {
             mock_delay_minutes: 0,
+            seoul: None,
+            tago: None,
+            gyeonggi: None,
             external: Some(Arc::new(ODsay {
                 key: api_key,
                 client,
@@ -81,7 +99,7 @@ impl Provider {
     pub async fn routes(&self, origin: &Place, destination: &Place) -> Result<RouteSet> {
         origin.validate()?;
         destination.validate()?;
-        match &self.external {
+        let mut routes = match &self.external {
             None => Ok(RouteSet {
                 source: "mock".into(),
                 warnings: vec![
@@ -113,6 +131,16 @@ impl Provider {
                     },
                     origin: origin.clone(),
                     destination: destination.clone(),
+                    subway_boarding: match mode {
+                        Mode::Subway | Mode::Mixed => Some(seoul::SubwayBoarding {
+                            access_minutes: walk_minutes,
+                            station_name: "Mock subway station".into(),
+                            line_id: Some("1001".into()),
+                            direction: Some(seoul::Direction::Up),
+                            live: None,
+                        }),
+                        Mode::Bus | Mode::Walk => None,
+                    },
                 })
                 .collect(),
             }),
@@ -122,7 +150,32 @@ impl Provider {
             )
             .await
             .map_err(|_| Error::Provider)?,
+        }?;
+        if let Some(seoul) = &self.seoul
+            && routes.source == "odsay"
+        {
+            for route in &mut routes.routes {
+                let Some(boarding) = &mut route.subway_boarding else {
+                    continue;
+                };
+                if boarding.line_id.is_none() || boarding.direction.is_none() {
+                    continue;
+                }
+                let query = SubwayQuery {
+                    station_name: boarding.station_name.clone(),
+                    line_id: boarding.line_id.clone(),
+                    direction: boarding.direction,
+                };
+                match seoul.arrivals(&query).await {
+                    Ok(arrivals) => boarding.live = Some(arrivals),
+                    Err(_) => routes.warnings.push(
+                        "Seoul subway real-time lookup failed; scheduled route estimates retained."
+                            .into(),
+                    ),
+                }
+            }
         }
+        Ok(routes)
     }
 }
 impl ODsay {
@@ -188,64 +241,5 @@ impl ODsay {
     }
 }
 #[cfg(test)]
-mod tests {
-    use super::*;
-    fn place() -> Place {
-        Place {
-            name: "test".into(),
-            lat: 37.5,
-            lon: 127.0,
-        }
-    }
-    fn fixture(minutes: u32, traffic: u32) -> String {
-        format!(
-            r#"{{"result":{{"path":[{{"info":{{"totalTime":{minutes},"payment":1500,"totalWalk":300}},"subPath":[{{"trafficType":3,"sectionTime":5,"distance":300}},{{"trafficType":{traffic},"sectionTime":25,"distance":5000,"startName":"A","endName":"B","lane":[{{"name":"Line 2","subwayCode":2}}]}}]}}]}}}}"#
-        )
-    }
-    #[test]
-    fn parses_estimates_with_stable_identity() -> Result<()> {
-        let origin = place();
-        let a = parse(serde_json::from_str(&fixture(30, 1))?, &origin, &origin)?;
-        let b = parse(serde_json::from_str(&fixture(40, 1))?, &origin, &origin)?;
-        assert_eq!(a.routes[0].id, b.routes[0].id);
-        assert_eq!(a.routes[0].walk_minutes, 5);
-        assert_eq!(a.routes[0].transfers, 0);
-        assert!(!a.routes[0].realtime);
-        assert!(parse(serde_json::from_str(&fixture(30, 4))?, &origin, &origin).is_err());
-        Ok(())
-    }
-    #[tokio::test]
-    async fn http_failure_is_private_and_consumes_quota() -> Result<()> {
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
-            .await
-            .map_err(|_| Error::Provider)?;
-        let address = listener.local_addr().map_err(|_| Error::Provider)?;
-        let server = tokio::spawn(async move {
-            let app = axum::Router::new().route(
-                "/",
-                axum::routing::get(|| async {
-                    (
-                        axum::http::StatusCode::BAD_GATEWAY,
-                        "secret-key coordinates",
-                    )
-                }),
-            );
-            axum::serve(listener, app).await
-        });
-        let mut provider = Provider::odsay("secret-key".into(), 1, 0)?;
-        if let Some(external) = provider.external.as_mut().and_then(Arc::get_mut) {
-            external.endpoint = format!("http://{address}/");
-        }
-        let result = provider.routes(&place(), &place()).await;
-        assert!(matches!(result, Err(Error::Provider)));
-        if let Some(external) = &provider.external {
-            assert_eq!(external.state.lock().await.used, 1);
-        }
-        assert!(matches!(
-            provider.routes(&place(), &place()).await,
-            Err(Error::Provider)
-        ));
-        server.abort();
-        Ok(())
-    }
-}
+#[path = "providers/tests.rs"]
+mod tests;

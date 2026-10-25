@@ -4,7 +4,7 @@ use axum::{
     http::{Request, StatusCode},
 };
 use serde_json::{Value, json};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use tower::ServiceExt;
 use waynudge::{
     api::{self, Auth},
@@ -15,6 +15,8 @@ use waynudge::{
 };
 
 type TestResult = Result<(), Box<dyn std::error::Error>>;
+#[path = "http_mcp/public_checks.rs"]
+mod public_checks;
 const ALICE: &str = "alice-secret-with-more-than-32-characters";
 const BOB: &str = "bob-secret-with-more-than-32-characters";
 fn routine() -> Result<Routine, serde_json::Error> {
@@ -26,7 +28,6 @@ async fn app() -> Result<(Router, Service), Box<dyn std::error::Error>> {
     let service = Service {
         store: Store::open("sqlite::memory:").await?,
         provider: Provider::mock(),
-        holidays: HashSet::new(),
     };
     let auth = Auth::new(
         HashMap::from([("alice".into(), ALICE.into()), ("bob".into(), BOB.into())]),
@@ -134,7 +135,7 @@ async fn seven_tools_are_callable_over_stateless_json_http() -> TestResult {
             .as_array()
             .ok_or("missing tools")?
             .len(),
-        7
+        10
     );
     let calls = [
         (
@@ -142,6 +143,10 @@ async fn seven_tools_are_callable_over_stateless_json_http() -> TestResult {
             json!({"routine":routine()?,"confirmed":true}),
         ),
         ("list_routines", json!({})),
+        (
+            "prepare_commute_reminder",
+            json!({"routine_id":"work","notification_time":"07:30","weekdays":[1,2,3,4,5]}),
+        ),
         (
             "get_commute_brief",
             json!({"routine_id":"work","date":"2026-10-26"}),
