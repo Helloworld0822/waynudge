@@ -47,14 +47,19 @@ bash scripts/dev.sh
 | `ODSAY_API_KEY` | `odsay`일 때 필수. 서버 전용 키 |
 | `ODSAY_DAILY_LIMIT` | `30`. 1~30, 모든 사용자가 프로세스 한도를 공유 |
 | `ODSAY_CACHE_SECONDS` | `0`. 캐시 끔. 명시적 저장 허용을 받은 경우만 1~300초 |
-| `HOLIDAYS` | 빈 값. 공식 한국 공휴일을 확인하여 `YYYY-MM-DD,YYYY-MM-DD` 형식으로 직접 설정, 공백 없음 |
 | `PUBLIC_HOST` | 미설정. 허용할 HTTPS 브라우저 Origin의 호스트명, 스킴·경로 제외 |
+| `PUBLIC_MCP` | `false`. `true`이면 공개 MCP 교통 조회 허용. 개인 루틴에는 Bearer 인증 필요 |
+| `SEOUL_SUBWAY_API_KEY` | 서울시 실시간 지하철 인증키 |
+| `SEOUL_SUBWAY_DAILY_LIMIT` | `1000`. 프로세스 내부 호출 상한 |
+| `TAGO_SERVICE_KEY` | 공공데이터포털 TAGO 인증키. 복사된 공백 및 URL 인코딩 키 정규화 |
+| `GYEONGGI_SERVICE_KEY` | 경기도 버스 별도 키. 미설정·빈 값이면 TAGO 키 공유, 서비스별 활용 승인 필요 |
+| `BUS_DAILY_LIMIT` | `1000`. 버스 제공자별 프로세스 내부 호출 상한 |
 
-공휴일은 자동 갱신되거나 내장되지 않습니다. `HOLIDAYS`가 비면 휴일이라도 루틴 요일에 해당하면 활성입니다. 특정 날짜의 `enabled` 설정이 요일·공휴일보다 우선합니다. 모든 루틴 시각은 `Asia/Seoul`입니다.
+공휴일·대체공휴일 제외는 호스트 예약 알림 프롬프트에서 처리합니다. 서버에는 공휴일 API나 달력을 두지 않습니다. 특정 날짜의 `enabled` 설정은 루틴 요일보다 우선하며 휴가·재택 예외는 계속 지원합니다. 모든 루틴 시각은 `Asia/Seoul`입니다.
 
 ## HTTP 사용
 
-모든 엔드포인트는 `/health`까지 Bearer 인증이 필요합니다. 사용자 ID는 요청 본문에서 받지 않고 토큰으로 결정합니다. 아래 명령은 저장소 루트의 별도 터미널에서 실행합니다.
+HTTP API와 `/health`는 Bearer 인증이 필요합니다. `PUBLIC_MCP=true`이면 `/mcp`의 공개 교통 조회는 인증 없이 사용할 수 있습니다. 익명 호출에는 개인 루틴이 노출되지 않으며 루틴 저장·수정은 인증이 필요합니다. 사용자 ID는 요청 본문에서 받지 않고 토큰으로 결정합니다. 아래 명령은 저장소 루트의 별도 터미널에서 실행합니다.
 
 ```bash
 set -a
@@ -119,9 +124,9 @@ curl --fail-with-body -H "Authorization: Bearer $TOKEN" \
 curl --fail-with-body -H "Authorization: Bearer $TOKEN" "$BASE/api/alerts"
 ```
 
-`POST /api/alerts/evaluate`는 현재 시각에 해당하는 준비·경로 변경 알림을 평가해 수신함에 적재합니다. 백그라운드 스케줄러도 도착 전 시간대에 평가합니다. `GET /api/alerts`를 클라이언트가 폴링해야 하며 모바일·메신저 푸시는 없습니다. 날짜·루틴·종류별 중복과 최소 알림 간격을 적용합니다. 휴일·제외일 또는 아직 준비 시각이 아닌 경우 비어 있는 수신함이 정상입니다.
+`POST /api/alerts/evaluate`는 현재 시각에 해당하는 준비·경로 변경 알림을 평가해 수신함에 적재합니다. 백그라운드 알림 스케줄러는 실행하지 않으며 반복 알림은 호스트 모델 에이전트의 예약 기능을 사용합니다. `GET /api/alerts`를 클라이언트가 폴링해야 하며 모바일·메신저 푸시는 없습니다. 날짜·루틴·종류별 중복과 최소 알림 간격을 적용합니다. 휴일·제외일 또는 아직 준비 시각이 아닌 경우 비어 있는 수신함이 정상입니다.
 
-스케줄러는 60초마다 확인하고 루틴의 최소 알림 간격마다 교통 정보를 재조회합니다. 도착 6시간 전부터 평가하며 자정을 넘는 준비 알림도 도착 날짜의 제외일 설정을 따릅니다. 서버가 중지된 동안의 알림을 보충하지 않습니다. 준비 시각과 재평가 간격 사이에 알림이 늦어질 수 있습니다.
+수동 inbox 평가 API는 호환성을 위해 남아 있지만 텔레그램·별도 서버 푸시 전송기는 없습니다. `schedule-commute` Skill이 알림 시각과 요일을 받아 호스트의 실제 예약 도구로 등록하며, 매 실행 때 최신 브리핑을 조회합니다. 호스트에 예약 도구가 없으면 일정 초안만 반환하고 등록 성공으로 표시하지 않습니다.
 
 ## MCP 연결과 스킬
 
@@ -152,6 +157,9 @@ curl --fail-with-body -H "Authorization: Bearer $TOKEN" \
 | `replan_trip` | `POST /api/replan` |
 | `set_routine_day_status` | `POST /api/day-status` |
 | `record_trip_feedback` | `POST /api/feedback` |
+| `get_subway_arrivals` | `POST /api/subway/arrivals` |
+| `get_bus_arrivals` | `POST /api/bus/arrivals` |
+| `prepare_commute_reminder` | 호스트 예약용 일정·프롬프트 생성, 예약 자체를 생성하지 않음 |
 
 도구 입력 스키마는 `tools/list`에서 확인합니다. 저장 도구에는 `confirmed`가 필수입니다. `true`는 사용자 확인을 표현하는 입력값일 뿐, 서버가 실제 대화를 검증하는 것은 아닙니다. 클라이언트는 변경 내용을 요약하고 명시적 확인을 받은 뒤 호출해야 합니다.
 
@@ -177,7 +185,7 @@ Quick Tunnel은 다시 만들 때 주소가 바뀌고 가동 시간 보장이 �
 
 ## ODsay 실제 데이터
 
-ODsay 애플리케이션과 서버 API 키를 준비한 뒤 `TRANSIT_PROVIDER=odsay`와 `ODSAY_API_KEY`를 설정합니다. 키를 클라이언트나 MCP 인수에 넣지 않습니다. 현재 구현은 대중교통 경로 검색의 예상 소요 시간을 사용하며 실시간 열차·버스 도착과 지연 API는 연결하지 않았습니다.
+ODsay 애플리케이션과 서버 API 키를 준비한 뒤 `TRANSIT_PROVIDER=odsay`와 `ODSAY_API_KEY`를 설정합니다. 키를 클라이언트나 MCP 인수에 넣지 않습니다. ODsay는 경로 예상치를 제공하고, 서울시 지하철·TAGO·경기도 버스 도착은 별도 어댑터로 조회합니다. 도착예정시간을 실제 전체 경로 지연으로 간주하거나 확률을 만들어내지 않습니다.
 
 ODsay Basic은 개인·학생·5인 이하 스타트업 대상으로 하루 30회 무료 호출을 제공합니다. 본인의 이용 자격·등록 플랫폼·현재 한도를 확인하세요. 결과 데이터의 저장·가공·배포에는 사전 동의 조건이 있으므로 캐시는 기본적으로 꺼져 있습니다. 운영자는 실제 이용과 결과 전달 방식에 필요한 권한을 확인하고, 명시적 저장 허용을 받은 경우에만 캐시를 켜야 합니다. [ODsay 이용 정책](https://lab.odsay.com/doc/totalPolicy)
 
@@ -222,3 +230,31 @@ docker run --rm --name waynudge -p 127.0.0.1:8080:8080 \
 ```
 
 이미지는 UID 10001로 실행합니다. 호스트 디렉터리를 바인드 마운트한다면 해당 UID에 쓰기 권한을 주어야 합니다. `scripts/tunnel.sh`를 호스트에서 실행하면 이 컨테이너의 로컬 포트를 연결합니다. 비공개 GHCR 이미지는 해당 저장소의 packages 읽기 권한으로 로그인해야 내려받을 수 있습니다.
+
+## 고정 공개 MCP와 실시간 조회
+
+현재 주소는 `https://waynudge.helloworld0822.xyz/mcp`입니다. 링크만으로 연결하여 `get_subway_arrivals`, `get_bus_arrivals`를 사용할 수 있습니다. 익명 루틴 목록은 비어 있고 개인 데이터 저장·수정에는 인증이 필요합니다. 서버의 API 키는 공개 응답에 포함하지 않습니다.
+
+```json
+{"name":"get_subway_arrivals","arguments":{"station_name":"서울","line_id":"1001","direction":"up"}}
+```
+
+```json
+{"name":"get_bus_arrivals","arguments":{"provider":"tago","station_id":"DJB8001793","city_code":25}}
+```
+
+```json
+{"name":"get_bus_arrivals","arguments":{"provider":"gyeonggi","station_id":"200000078"}}
+```
+
+버스 정류소 ID는 제공자별로 다르므로 지도 서비스 ID를 그대로 바꿔 넣지 않습니다. 경기도 응답의 `crowding`은 여유·보통·혼잡·매우혼잡을 나타내고, `remaining_seats`는 좌석 제공 노선의 잔여좌석입니다. 미제공·음수 값은 `null`이며 여유나 0명으로 해석하지 않습니다. TAGO 도착 응답과 서울시 지하철 도착 응답에 없는 혼잡도를 만들어내지 않습니다. SK API는 사용하지 않습니다. [경기도 API 필드 설명](https://www.gbis.go.kr/gbis2014/publicService.action?cmd=mBusArrivalStation)
+
+서울시 공식 지하철 API는 HTTP 주소를 사용합니다. 이 환경에서 HTTPS 연결은 실패했으며, 해당 제공자까지의 구간은 TLS로 암호화되지 않는 제약이 있습니다. 인증키·요청 URL을 로그에 기록하지 않으며 API 오류·오래된 관측·알 수 없는 0초 값을 정상 실시간 성공으로 바꾸지 않습니다. 버스 API는 HTTPS를 사용합니다. 각 실시간 어댑터는 Tokio/Reqwest 비동기, 8초 요청·10초 전체 타임아웃, 15초 캐시, 일별 상한을 적용합니다.
+
+## 모델 에이전트 예약 알림
+
+“평일 오전 7시 30분마다 공휴일 제외하고 출근 알림을 보내줘”라고 `schedule-commute` Skill에 요청합니다. `prepare_commute_reminder`가 검증한 Asia/Seoul 반복 일정과 프롬프트를 만들고 호스트 예약 도구가 실제로 등록합니다. 반환된 `created=false`는 아직 호스트에 등록되지 않았다는 의미입니다.
+
+알림에는 `prepare_at`, `leave_at`, `boarding.station_name`, `boarding.planned_board_at`을 사용해 준비·출발·승차 시각을 표시합니다. `next_observed_train_at`은 계획 시각과 구분된 관측값이며 열차가 목적지까지 운행하는지 별도로 확인해야 합니다. 공휴일 제외는 프롬프트에 포함되며 서버 공휴일 달력을 사용하지 않습니다.
+
+현재 고정 도메인은 사용자 systemd 서비스 `waynudge.service`, `waynudge-tunnel.service`로 실행됩니다. 비밀 키는 프로젝트의 권한600 `.env`에서 읽고, DB는 `~/.local/share/waynudge/waynudge.db`에 저장합니다. 사용자 세션 종료 후에도 실행하도록 linger를 활성화했습니다. 호스트가 꺼지면 서비스도 중단됩니다.
