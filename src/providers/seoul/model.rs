@@ -69,6 +69,8 @@ pub struct SubwayArrivals {
 pub struct SubwayBoarding {
     pub access_minutes: u32,
     pub access_walk_minutes: u32,
+    #[serde(default)]
+    pub access_walk_distance_meters: Option<f64>,
     pub station_name: String,
     pub line_id: Option<String>,
     pub direction: Option<Direction>,

@@ -59,6 +59,13 @@ impl Store {
                 id INTEGER PRIMARY KEY, user_id TEXT NOT NULL, routine_id TEXT NOT NULL,
                 body TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (user_id, routine_id) REFERENCES routines(user_id, id));
+             CREATE TABLE IF NOT EXISTS walking_observations (
+                user_id TEXT NOT NULL, routine_id TEXT NOT NULL, observation_id TEXT NOT NULL,
+                origin TEXT NOT NULL, destination TEXT NOT NULL,
+                distance_meters REAL NOT NULL, elapsed_minutes REAL NOT NULL,
+                distance_source TEXT NOT NULL,
+                PRIMARY KEY (user_id, routine_id, observation_id),
+                FOREIGN KEY (user_id, routine_id) REFERENCES routines(user_id, id));
              CREATE TABLE IF NOT EXISTS alerts (
                 id INTEGER PRIMARY KEY, user_id TEXT NOT NULL, routine_id TEXT NOT NULL,
                 date TEXT NOT NULL, kind TEXT NOT NULL, created_at TEXT NOT NULL,
@@ -95,7 +102,7 @@ impl Store {
     pub async fn upsert(&self, user: &str, routine: &Routine) -> Result<()> {
         text(user)?;
         routine.validate()?;
-        sqlx::query("INSERT INTO routines(user_id, id, body) VALUES (?, ?, ?) ON CONFLICT(user_id, id) DO UPDATE SET body = excluded.body")
+        sqlx::query("INSERT INTO routines(user_id, id, body) VALUES (?, ?, ?) ON CONFLICT(user_id, id) DO UPDATE SET body = json_set(excluded.body, '$.walking_speed_kmh', COALESCE(json_extract(excluded.body, '$.walking_speed_kmh'), json_extract(routines.body, '$.walking_speed_kmh')))")
             .bind(user).bind(&routine.id).bind(serde_json::to_string(routine)?).execute(&self.pool).await?;
         Ok(())
     }

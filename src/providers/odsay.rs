@@ -27,7 +27,8 @@ struct Info {
 struct Leg {
     traffic_type: u32,
     section_time: u32,
-    distance: f64,
+    #[serde(default)]
+    distance: Option<f64>,
     #[serde(default)]
     start_name: String,
     #[serde(default)]
@@ -58,6 +59,7 @@ pub(super) fn parse(payload: Payload, origin: &Place, destination: &Place) -> Re
     for path in paths {
         let mut boarding = None;
         let mut elapsed = 0_u32;
+        let mut walk_distance = Some(0.0);
         let (mut subway, mut bus, mut walk, mut legs) = (false, false, 0_u32, 0_u32);
         let mut identity = Sha256::new();
         if path.sub_path.is_empty()
@@ -71,7 +73,10 @@ pub(super) fn parse(payload: Payload, origin: &Place, destination: &Place) -> Re
             if leg.section_time > path.info.total_time {
                 return Err(Error::Provider);
             }
-            if !leg.distance.is_finite() || leg.distance < 0.0 {
+            if leg
+                .distance
+                .is_some_and(|distance| !distance.is_finite() || distance < 0.0)
+            {
                 return Err(Error::Provider);
             }
             match leg.traffic_type {
@@ -91,6 +96,7 @@ pub(super) fn parse(payload: Payload, origin: &Place, destination: &Place) -> Re
                         boarding = Some(seoul::SubwayBoarding {
                             access_minutes: elapsed,
                             access_walk_minutes: walk,
+                            access_walk_distance_meters: walk_distance,
                             station_name: leg.start_name.clone(),
                             line_id,
                             direction,
@@ -106,6 +112,13 @@ pub(super) fn parse(payload: Payload, origin: &Place, destination: &Place) -> Re
                 }
                 3 => {
                     walk = walk.checked_add(leg.section_time).ok_or(Error::Provider)?;
+                    walk_distance = walk_distance
+                        .zip(leg.distance)
+                        .filter(|(_, distance)| *distance > 0.0 || leg.section_time == 0)
+                        .map(|(total, distance)| total + distance);
+                    if walk_distance.is_some_and(|distance| !distance.is_finite()) {
+                        return Err(Error::Provider);
+                    }
                 }
                 _ => return Err(Error::Provider),
             }
@@ -128,6 +141,7 @@ pub(super) fn parse(payload: Payload, origin: &Place, destination: &Place) -> Re
             },
             total_minutes: path.info.total_time,
             walk_minutes: walk,
+            walk_distance_meters: walk_distance,
             transfers: legs.saturating_sub(1),
             cost_won: path.info.payment,
             collected_at: Utc::now(),

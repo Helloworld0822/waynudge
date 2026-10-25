@@ -1,8 +1,9 @@
 use super::*;
+use crate::error::Error;
 #[test]
 fn structured_schemas_when_tools_are_listed() {
     let tools = Mcp::tool_router().list_all();
-    assert_eq!(tools.len(), 12);
+    assert_eq!(tools.len(), 14);
     for tool in tools {
         assert!(tool.output_schema.is_some(), "{}", tool.name);
         assert!(

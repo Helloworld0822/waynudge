@@ -27,6 +27,7 @@ pub(super) fn routine() -> Routine {
         preparation_minutes: 10,
         min_alert_interval_minutes: 10,
         walking_factor: 1.0,
+        walking_speed_kmh: None,
         usual_route_id: None,
     }
 }

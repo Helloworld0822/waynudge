@@ -8,6 +8,7 @@ use crate::{
         Brief, BriefRequest, MutationResult, ReplanRequest, RoutineList, Service, UpsertRequest,
     },
     storage::{DayStatus, Feedback},
+    walking::{WalkingCalibration, WalkingObservation},
 };
 pub use auth::{Auth, User};
 use axum::{
@@ -44,9 +45,11 @@ pub fn router(service: Service, auth: Auth) -> Router {
         .route("/api/routines", get(list).post(upsert))
         .route("/api/brief", post(brief))
         .route("/api/compare", post(compare))
+        .route("/api/routes/options", post(travel_options))
         .route("/api/replan", post(replan))
         .route("/api/day-status", post(day_status))
         .route("/api/feedback", post(feedback))
+        .route("/api/walking/observations", post(walking_observation))
         .route("/api/alerts", get(alerts))
         .route("/api/subway/arrivals", post(subway_arrivals))
         .route("/api/subway/congestion", post(subway_congestion))
@@ -78,6 +81,11 @@ async fn simulate_congestion(
     Json(input): Json<crate::routing::simulation::SimulationRequest>,
 ) -> Result<Json<crate::routing::simulation::SimulationReport>> {
     crate::routing::simulation::simulate(input).map(Json)
+}
+async fn travel_options(
+    Json(input): Json<crate::options::TravelOptionsRequest>,
+) -> Result<Json<crate::options::TravelOptionsReport>> {
+    crate::options::compare_travel_options(input).map(Json)
 }
 async fn bus_arrivals(
     State(s): State<Service>,
@@ -136,6 +144,13 @@ async fn feedback(
     Json(i): Json<Feedback>,
 ) -> Result<Json<MutationResult>> {
     s.feedback(&u.0, i).await.map(Json)
+}
+async fn walking_observation(
+    State(s): State<Service>,
+    Extension(u): Extension<User>,
+    Json(input): Json<WalkingObservation>,
+) -> Result<Json<WalkingCalibration>> {
+    s.record_walking_observation(&u.0, input).await.map(Json)
 }
 async fn alerts(
     State(s): State<Service>,

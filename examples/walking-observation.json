@@ -1,0 +1,10 @@
+{
+  "routine_id": "work",
+  "observation_id": "synthetic-walk-001",
+  "origin": {"name": "Synthetic A", "lat": 37.5, "lon": 127.0},
+  "destination": {"name": "Synthetic B", "lat": 37.505, "lon": 127.005},
+  "distance_meters": 1000,
+  "elapsed_minutes": 12,
+  "distance_source": "user_measured",
+  "confirmed": false
+}

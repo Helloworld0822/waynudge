@@ -1,4 +1,5 @@
-use axum::http::request::Parts;
+mod context;
+use context::{tool_error, user};
 use rmcp::{
     ErrorData, Json, RoleServer, ServerHandler,
     handler::server::{tool::schema_for_type, wrapper::Parameters},
@@ -8,13 +9,13 @@ use rmcp::{
 };
 
 use crate::{
-    api::User,
-    error::Error,
+    options::{TravelOptionsReport, TravelOptionsRequest},
     routing::Comparison,
     service::{
         Brief, BriefRequest, MutationResult, ReplanRequest, RoutineList, Service, UpsertRequest,
     },
     storage::{DayStatus, Feedback},
+    walking::{WalkingCalibration, WalkingObservation},
 };
 
 #[derive(Clone)]
@@ -112,6 +113,20 @@ impl Mcp {
             .map_err(tool_error)
     }
 
+    #[tool(description = "Compare supplied bus, subway, mixed and walking routes from a confirmed origin to a destination under hypothetical congestion. Use host map route alternatives or clearly marked mock data. Applies supplied measured walking speed only to walking distances. Does not fetch maps, track GPS, save routines, observe live delays or predict probabilities.",
+        output_schema = schema_for_type::<TravelOptionsReport>(),
+        annotations(read_only_hint = true))]
+    async fn compare_travel_options(
+        &self,
+        context: RequestContext<RoleServer>,
+        Parameters(input): Parameters<TravelOptionsRequest>,
+    ) -> Result<Json<TravelOptionsReport>, ErrorData> {
+        user(&context)?;
+        crate::options::compare_travel_options(input)
+            .map(Json)
+            .map_err(tool_error)
+    }
+
     #[tool(description = "Create or update a commute routine after explicit user confirmation.",
         output_schema = schema_for_type::<MutationResult>(),
         annotations(read_only_hint = false, destructive_hint = false, idempotent_hint = true))]
@@ -187,6 +202,21 @@ impl Mcp {
             .map_err(tool_error)
     }
 
+    #[tool(description = "Calibrate walking speed from an actual walked distance and elapsed minutes. Never use straight-line distance or minutes alone. First preview with confirmed=false (public, no saved profile access); after explicit consent save with confirmed=true for the authenticated user's owned routine. Reuse observation_id on retries. Applies to distance-based walking and transfers, never bus/train time.",
+        output_schema = schema_for_type::<WalkingCalibration>(),
+        annotations(read_only_hint = false, destructive_hint = false, idempotent_hint = true))]
+    async fn record_walking_observation(
+        &self,
+        context: RequestContext<RoleServer>,
+        Parameters(input): Parameters<WalkingObservation>,
+    ) -> Result<Json<WalkingCalibration>, ErrorData> {
+        self.service
+            .record_walking_observation(user(&context)?, input)
+            .await
+            .map(Json)
+            .map_err(tool_error)
+    }
+
     #[tool(description = "Record observed trip duration and walking feedback after explicit user confirmation.",
         output_schema = schema_for_type::<MutationResult>(),
         annotations(read_only_hint = false, destructive_hint = false, idempotent_hint = false))]
@@ -207,34 +237,6 @@ impl Mcp {
 impl ServerHandler for Mcp {
     fn get_info(&self) -> ServerConfig {
         ServerConfig::new(ServerCapabilities::builder().enable_tools().build())
-    }
-}
-
-fn user(context: &RequestContext<RoleServer>) -> Result<&str, ErrorData> {
-    context
-        .extensions
-        .get::<Parts>()
-        .and_then(|parts| parts.extensions.get::<User>())
-        .map(|user| user.0.as_str())
-        .ok_or_else(|| tool_error(Error::Unauthorized))
-}
-
-fn tool_error(error: Error) -> ErrorData {
-    match error {
-        Error::Invalid(message) => ErrorData::invalid_params(message, None),
-        Error::Unauthorized => ErrorData::invalid_request("authentication required", None),
-        Error::NotFound => ErrorData::invalid_params("routine not found", None),
-        Error::Confirmation => {
-            ErrorData::invalid_params("explicit user confirmation required", None)
-        }
-        Error::Provider => ErrorData::internal_error(
-            "transit provider unavailable; no live estimate available",
-            None,
-        ),
-        Error::Storage(_) | Error::Json(_) => {
-            tracing::error!("storage operation failed");
-            ErrorData::internal_error("storage unavailable", None)
-        }
     }
 }
 

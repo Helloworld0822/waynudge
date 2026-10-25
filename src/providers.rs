@@ -17,6 +17,7 @@ pub mod bus;
 pub mod congestion;
 mod live;
 mod live_http;
+mod mock;
 pub mod seoul;
 use bus::{BusArrivals, BusKind, BusProvider, BusQuery};
 use seoul::{SeoulSubway, SubwayArrivals, SubwayQuery};
@@ -105,51 +106,7 @@ impl Provider {
         origin.validate()?;
         destination.validate()?;
         let mut routes = match &self.external {
-            None => Ok(RouteSet {
-                source: "mock".into(),
-                warnings: vec![
-                    "Synthetic demo routes; not real transit or live information.".into(),
-                    format!(
-                        "Simulated subway delay: {} minutes; not an observed disruption.",
-                        self.mock_delay_minutes
-                    ),
-                ],
-                routes: [
-                    ("mock-subway", Mode::Subway, 38, 8, 1),
-                    ("mock-bus", Mode::Bus, 44, 4, 0),
-                    ("mock-mixed", Mode::Mixed, 35, 10, 2),
-                ]
-                .into_iter()
-                .map(|(id, mode, total_minutes, walk_minutes, transfers)| Route {
-                    id: id.into(),
-                    mode,
-                    total_minutes,
-                    walk_minutes,
-                    transfers,
-                    cost_won: 1500,
-                    collected_at: Utc::now(),
-                    realtime: false,
-                    delay_minutes: if id == "mock-subway" {
-                        self.mock_delay_minutes
-                    } else {
-                        0
-                    },
-                    origin: origin.clone(),
-                    destination: destination.clone(),
-                    subway_boarding: match mode {
-                        Mode::Subway | Mode::Mixed => Some(seoul::SubwayBoarding {
-                            access_minutes: walk_minutes,
-                            access_walk_minutes: walk_minutes,
-                            station_name: "Mock subway station".into(),
-                            line_id: Some("1001".into()),
-                            direction: Some(seoul::Direction::Up),
-                            live: None,
-                        }),
-                        Mode::Bus | Mode::Walk => None,
-                    },
-                })
-                .collect(),
-            }),
+            None => Ok(self.mock_routes(origin, destination)),
             Some(provider) => tokio::time::timeout(
                 Duration::from_secs(10),
                 provider.routes(origin, destination),

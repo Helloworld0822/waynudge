@@ -51,6 +51,9 @@ pub struct Routine {
     pub min_alert_interval_minutes: u32,
     /// Walking duration multiplier; 1.2 means 20% slower than provider baseline.
     pub walking_factor: f64,
+    /// Calibrated from measured walking distance and elapsed time.
+    #[serde(default)]
+    pub walking_speed_kmh: Option<f64>,
     pub usual_route_id: Option<String>,
 }
 impl Routine {
@@ -75,6 +78,9 @@ impl Routine {
             || !(1..=1440).contains(&self.min_alert_interval_minutes)
             || !self.walking_factor.is_finite()
             || !(0.5..=3.0).contains(&self.walking_factor)
+            || self
+                .walking_speed_kmh
+                .is_some_and(|speed| !speed.is_finite() || !(0.5..=12.0).contains(&speed))
         {
             return Err(invalid("routine limits out of range"));
         }
@@ -82,6 +88,23 @@ impl Routine {
             text(id)?;
         }
         Ok(())
+    }
+
+    pub fn walking_duration_seconds(
+        &self,
+        distance_meters: Option<f64>,
+        baseline_minutes: u32,
+    ) -> Result<f64> {
+        self.validate()?;
+        if distance_meters.is_some_and(|distance| !distance.is_finite() || distance < 0.0) {
+            return Err(invalid("walking distance must be finite and nonnegative"));
+        }
+        match (self.walking_speed_kmh, distance_meters) {
+            (Some(speed), Some(distance)) if distance > 0.0 || baseline_minutes == 0 => {
+                Ok(distance / (speed / 3.6))
+            }
+            _ => Ok(f64::from(baseline_minutes) * self.walking_factor * 60.0),
+        }
     }
 }
 pub fn text(value: &str) -> Result<()> {

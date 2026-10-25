@@ -13,6 +13,8 @@ pub struct Route {
     pub mode: Mode,
     pub total_minutes: u32,
     pub walk_minutes: u32,
+    #[serde(default)]
+    pub walk_distance_meters: Option<f64>,
     pub transfers: u32,
     pub cost_won: u32,
     pub collected_at: DateTime<Utc>,
@@ -71,13 +73,23 @@ pub fn compare(input: &CompareInput) -> Result<Comparison> {
             );
         }
         let mut adjusted = route.clone();
+        if input.routine.walking_speed_kmh.is_some()
+            && route.walk_minutes > 0
+            && route.walk_distance_meters.is_none()
+        {
+            warnings.push("Walking distance unavailable; measured speed could not be applied, so provider walking time and walking factor were retained.".into());
+        }
         let walking = std::time::Duration::try_from_secs_f64(
-            f64::from(route.walk_minutes) * input.routine.walking_factor * 60.0,
+            input
+                .routine
+                .walking_duration_seconds(route.walk_distance_meters, route.walk_minutes)?,
         )
         .map_err(|_| invalid("walking duration out of range"))?;
-        adjusted.walk_minutes = u32::try_from(walking.as_secs().div_ceil(60))
+        adjusted.walk_minutes = u32::try_from(walking.as_nanos().div_ceil(60_000_000_000))
             .map_err(|_| invalid("walking duration out of range"))?;
-        adjusted.total_minutes = route.total_minutes - route.walk_minutes + adjusted.walk_minutes;
+        adjusted.total_minutes = (route.total_minutes - route.walk_minutes)
+            .checked_add(adjusted.walk_minutes)
+            .ok_or_else(|| invalid("route duration out of range"))?;
         adjusted.delay_minutes = if (route.realtime && (-30..=300).contains(&age))
             || (!route.realtime && input.routes.source == "mock")
         {

@@ -32,6 +32,7 @@ async fn input() -> Result<CompareInput> {
             preparation_minutes: 0,
             min_alert_interval_minutes: 30,
             walking_factor: 1.0,
+            walking_speed_kmh: None,
             usual_route_id: None,
         },
         routes,
@@ -104,6 +105,85 @@ async fn mock_routes_are_explicit_estimates() -> Result<()> {
             .routes
             .iter()
             .all(|r| !r.realtime && r.delay_minutes == 0)
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn measured_speed_adjusts_only_walking_without_applying_factor_twice() -> Result<()> {
+    // Given: 30 vehicle minutes, 8 baseline walking minutes, 600 meters and a 7 minute delay.
+    let mut input = input().await?;
+    input.routine.walking_speed_kmh = Some(6.0);
+    input.routine.walking_factor = 2.5;
+    input.routes.routes.truncate(1);
+    input.routes.routes[0].walk_distance_meters = Some(600.0);
+    input.routes.routes[0].delay_minutes = 7;
+    // When
+    let result = compare(&input)?;
+    // Then: 6 walking minutes, 30 unchanged vehicle minutes, unchanged delay.
+    let route = result.selected.ok_or(waynudge::error::Error::Provider)?;
+    assert_eq!(
+        (route.walk_minutes, route.total_minutes, route.delay_minutes),
+        (6, 36, 7)
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn missing_distance_uses_factor_even_with_measured_speed() -> Result<()> {
+    // Given
+    let mut input = input().await?;
+    input.routes.warnings.clear();
+    input.routine.walking_speed_kmh = Some(6.0);
+    input.routine.walking_factor = 1.5;
+    input.routes.routes.truncate(1);
+    input.routes.routes[0].walk_distance_meters = None;
+    // When
+    let result = compare(&input)?;
+    // Then
+    let route = result.selected.ok_or(waynudge::error::Error::Provider)?;
+    assert_eq!((route.walk_minutes, route.total_minutes), (12, 42));
+    assert_eq!(result.warnings.len(), 1);
+    Ok(())
+}
+
+#[tokio::test]
+async fn fractional_walking_second_rounds_up_to_the_next_minute() -> Result<()> {
+    // Given: 100.01 meters at 6 km/h takes just over one minute.
+    let mut input = input().await?;
+    input.routine.walking_speed_kmh = Some(6.0);
+    input.routes.routes.truncate(1);
+    input.routes.routes[0].walk_distance_meters = Some(100.01);
+    // When
+    let result = compare(&input)?;
+    // Then
+    let route = result.selected.ok_or(waynudge::error::Error::Provider)?;
+    assert_eq!((route.walk_minutes, route.total_minutes), (2, 32));
+    Ok(())
+}
+
+#[tokio::test]
+async fn legacy_route_without_distance_fields_deserializes() -> Result<()> {
+    // Given
+    let input = input().await?;
+    let mut json = serde_json::to_value(&input.routes.routes[0])?;
+    json.as_object_mut()
+        .ok_or(waynudge::error::Error::Provider)?
+        .remove("walk_distance_meters");
+    json["subway_boarding"]
+        .as_object_mut()
+        .ok_or(waynudge::error::Error::Provider)?
+        .remove("access_walk_distance_meters");
+    // When
+    let route: waynudge::routing::Route = serde_json::from_value(json)?;
+    // Then
+    assert!(route.walk_distance_meters.is_none());
+    assert!(
+        route
+            .subway_boarding
+            .ok_or(waynudge::error::Error::Provider)?
+            .access_walk_distance_meters
+            .is_none()
     );
     Ok(())
 }
