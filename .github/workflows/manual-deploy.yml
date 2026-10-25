@@ -1,0 +1,59 @@
+name: Manual binary deployment
+on:
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: Explicit operation (dry-run never changes service or binary)
+        type: choice
+        options: [dry-run, install, rollback]
+        default: dry-run
+        required: true
+      ci_run_id:
+        description: Successful CI and delivery run ID (unused for rollback)
+        type: string
+        required: false
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: waynudge-manual-deployment
+  cancel-in-progress: false
+jobs:
+  deploy:
+    if: github.event_name == 'workflow_dispatch' && vars.ENABLE_MANUAL_DEPLOY == 'true' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')
+    runs-on: [self-hosted, linux, x64, waynudge-deploy]
+    environment: waynudge-manual
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install selected CI artifact or restore previous binary
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          CI_RUN_ID: ${{ inputs.ci_run_id }}
+          OPERATION: ${{ inputs.operation }}
+          TARGET: ${{ vars.WAYNUDGE_BINARY }}
+          SERVICE: ${{ vars.WAYNUDGE_SERVICE }}
+          HEALTH_URL: ${{ vars.WAYNUDGE_HEALTH_URL }}
+          WAYNUDGE_HEALTH_TOKEN: ${{ secrets.WAYNUDGE_HEALTH_TOKEN }}
+        run: |
+          set -euo pipefail
+          : "${TARGET:?Set WAYNUDGE_BINARY}" "${SERVICE:?Set WAYNUDGE_SERVICE}" "${HEALTH_URL:?Set WAYNUDGE_HEALTH_URL}"
+          artifact_dir=$(mktemp -d)
+          trap 'rm -rf "$artifact_dir"' EXIT
+          case "$OPERATION" in
+            rollback) args=(--apply --rollback) ;;
+            dry-run|install)
+              [[ "$CI_RUN_ID" =~ ^[0-9]+$ ]]
+              gh api "repos/$GH_REPO/actions/runs/$CI_RUN_ID" > "$artifact_dir/run.json"
+              jq -e '.conclusion == "success" and .path == ".github/workflows/ci.yml" and .event != "pull_request" and (.head_branch == "main" or .head_branch == "develop")' "$artifact_dir/run.json"
+              gh run download "$CI_RUN_ID" --name waynudge-linux-amd64 --dir "$artifact_dir"
+              args=()
+              if [[ "$OPERATION" == install ]]; then args=(--apply); fi
+              ;;
+            *) exit 2 ;;
+          esac
+          bash scripts/install-binary.sh "${args[@]}" "$artifact_dir/waynudge" "$TARGET" "$SERVICE" "$HEALTH_URL"
