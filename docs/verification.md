@@ -47,6 +47,8 @@
 
 ## CI/CD
 
+[첫 실행 40158700700](https://github.com/Helloworld0822/waynudge/actions/runs/40158700700)은 성공했습니다. `verify` 5분54초, `deliver` 5분31초이며, 검증한 코드 커밋은 `f067ccb6a9483f7c596e1ddcde9df780b95944f9`입니다. Linux 실행 파일 artifact `waynudge-linux-amd64`(5,105,495 bytes)와 `ghcr.io/helloworld0822/waynudge:latest` 및 해당 코드 SHA 태그 이미지가 발행되었습니다. 이후 문서만 변경한 커밋은 CI를 생략했습니다.
+
 [개인 비공개 저장소](https://github.com/Helloworld0822/waynudge)의 [Actions 실행 결과](https://github.com/Helloworld0822/waynudge/actions/workflows/ci.yml)에서 커밋별 원본 로그를 확인할 수 있습니다. 검증 성공 후 실행 파일 artifact와 GHCR 컨테이너를 발행합니다. 로컬 Docker 데몬은 실행 중이 아니어서 로컬 컨테이너 실행은 검증하지 못했습니다. Rust1.98-bookworm 이미지 manifest는 조회에 성공했습니다.
 
 ## 제한과 후속 과제
