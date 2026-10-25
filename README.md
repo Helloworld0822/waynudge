@@ -51,6 +51,8 @@ bash scripts/dev.sh
 | `PUBLIC_MCP` | `false`. `true`이면 공개 MCP 교통 조회 허용. 개인 루틴에는 Bearer 인증 필요 |
 | `SEOUL_SUBWAY_API_KEY` | 서울시 실시간 지하철 인증키 |
 | `SEOUL_SUBWAY_DAILY_LIMIT` | `1000`. 프로세스 내부 호출 상한 |
+| `SUBWAY_CONGESTION_SERVICE_KEY` | 서울교통공사 지하철혼잡도정보 Open API 인증키 |
+| `SUBWAY_CONGESTION_DAILY_LIMIT` | `100`. 평균 혼잡도 조회의 프로세스 내부 호출 상한 |
 | `TAGO_SERVICE_KEY` | 공공데이터포털 TAGO 인증키. 복사된 공백 및 URL 인코딩 키 정규화 |
 | `GYEONGGI_SERVICE_KEY` | 경기도 버스 별도 키. 미설정·빈 값이면 TAGO 키 공유, 서비스별 활용 승인 필요 |
 | `BUS_DAILY_LIMIT` | `1000`. 버스 제공자별 프로세스 내부 호출 상한 |
@@ -158,6 +160,8 @@ curl --fail-with-body -H "Authorization: Bearer $TOKEN" \
 | `set_routine_day_status` | `POST /api/day-status` |
 | `record_trip_feedback` | `POST /api/feedback` |
 | `get_subway_arrivals` | `POST /api/subway/arrivals` |
+| `get_subway_congestion` | `POST /api/subway/congestion` |
+| `simulate_congestion` | `POST /api/simulate/congestion` |
 | `get_bus_arrivals` | `POST /api/bus/arrivals` |
 | `prepare_commute_reminder` | 호스트 예약용 일정·프롬프트 생성, 예약 자체를 생성하지 않음 |
 
@@ -233,7 +237,9 @@ docker run --rm --name waynudge -p 127.0.0.1:8080:8080 \
 
 ## 고정 공개 MCP와 실시간 조회
 
-현재 주소는 `https://waynudge.helloworld0822.xyz/mcp`입니다. 링크만으로 연결하여 `get_subway_arrivals`, `get_bus_arrivals`를 사용할 수 있습니다. 익명 루틴 목록은 비어 있고 개인 데이터 저장·수정에는 인증이 필요합니다. 서버의 API 키는 공개 응답에 포함하지 않습니다.
+현재 주소는 `https://waynudge.helloworld0822.xyz/mcp`입니다. 링크만으로 연결하여 `get_subway_arrivals`, `get_bus_arrivals`, `get_subway_congestion`을 사용할 수 있습니다. 익명 루틴 목록은 비어 있고 개인 데이터 저장·수정에는 인증이 필요합니다. 서버의 API 키는 공개 응답에 포함하지 않습니다.
+
+curl 접속은 검증했으며 일부 클라이언트 서명(Python urllib 기본값)은 Cloudflare Error 1010으로 차단되었습니다. 이 경우 서버 인증 오류가 아니라 Cloudflare 정책입니다. 해당 호스트의 `/mcp`에 한정한 [Browser Integrity Check 예외 설정](https://developers.cloudflare.com/waf/tools/browser-integrity-check/#disable-selectively)이 필요할 수 있습니다.
 
 ```json
 {"name":"get_subway_arrivals","arguments":{"station_name":"서울","line_id":"1001","direction":"up"}}
@@ -249,7 +255,40 @@ docker run --rm --name waynudge -p 127.0.0.1:8080:8080 \
 
 버스 정류소 ID는 제공자별로 다르므로 지도 서비스 ID를 그대로 바꿔 넣지 않습니다. 경기도 응답의 `crowding`은 여유·보통·혼잡·매우혼잡을 나타내고, `remaining_seats`는 좌석 제공 노선의 잔여좌석입니다. 미제공·음수 값은 `null`이며 여유나 0명으로 해석하지 않습니다. TAGO 도착 응답과 서울시 지하철 도착 응답에 없는 혼잡도를 만들어내지 않습니다. SK API는 사용하지 않습니다. [경기도 API 필드 설명](https://www.gbis.go.kr/gbis2014/publicService.action?cmd=mBusArrivalStation)
 
-서울시 공식 지하철 API는 HTTP 주소를 사용합니다. 이 환경에서 HTTPS 연결은 실패했으며, 해당 제공자까지의 구간은 TLS로 암호화되지 않는 제약이 있습니다. 인증키·요청 URL을 로그에 기록하지 않으며 API 오류·오래된 관측·알 수 없는 0초 값을 정상 실시간 성공으로 바꾸지 않습니다. 버스 API는 HTTPS를 사용합니다. 각 실시간 어댑터는 Tokio/Reqwest 비동기, 8초 요청·10초 전체 타임아웃, 15초 캐시, 일별 상한을 적용합니다.
+### 지하철 평균 혼잡도
+
+[서울교통공사 지하철혼잡도정보](https://www.data.go.kr/data/15071311/fileData.do)의 Open API를 사용합니다. 별도 활용신청 후 `.env`의 `SUBWAY_CONGESTION_SERVICE_KEY`에 Encoding 또는 Decoding 키를 저장합니다. 버스 키에 해당 API 권한이 자동으로 생기지 않습니다. `SUBWAY_CONGESTION_DAILY_LIMIT` 기본값은 로컬 제한 100회이며 실제 발급 한도 이내로 설정합니다.
+
+```json
+{"name":"get_subway_congestion","arguments":{"station_name":"서울역","line":1,"day_type":"weekday","time":"08:45","direction":"up"}}
+```
+
+`day_type`은 `weekday`, `saturday`, `sunday`이며 시간은 Asia/Seoul입니다. 호선은 1~8, 방향은 `up`(상선·내선), `down`(하선·외선)입니다. 방향을 생략하면 양방향을 반환합니다. 공식 데이터의 역명과 방향을 사용하고 지원하지 않는 호선·역에는 값을 추정하지 않습니다.
+
+이 API는 **실시간이 아닌 30분 평균 통계**입니다. 현재 어댑터는 공식 2026-06-30 자료에 고정되어 있으며 `dataset_as_of`, `realtime=false`, 시간 구간, 정원 대비 혼잡도(%)를 반환합니다. 08:45 조회는 08:30~09:00 평균입니다. 100%를 넘을 수 있으며 34%는 좌석이 찬 수준이라는 공급자 정의입니다. 결측값은 `null`입니다. 조회 시각 `served_at`을 데이터 측정 시각으로 설명하지 않습니다.
+
+Tokio/Reqwest 비동기 호출, 8초 HTTP·10초 전체 타임아웃, 1시간 캐시, 4MiB 응답 제한을 적용합니다. 2,000행까지 한 번에 수집하며 응답이 잘리면 오류를 반환합니다. 분기 자료 변경 시 `src/providers/congestion.rs`의 공식 endpoint와 기준일을 함께 갱신해야 합니다. 통계를 실시간 지연이나 열차별 탑승 가능 여부로 변환하지 않습니다.
+
+서울시 실시간 지하철 도착 API는 HTTP 주소를 사용합니다. 이 환경에서 HTTPS 연결은 실패했으며, 해당 제공자까지의 구간은 TLS로 암호화되지 않는 제약이 있습니다. 인증키·요청 URL을 로그에 기록하지 않으며 API 오류·오래된 관측·알 수 없는 0초 값을 정상 실시간 성공으로 바꾸지 않습니다. 버스와 평균 혼잡도 API는 HTTPS를 사용합니다. 각 실시간 어댑터는 Tokio/Reqwest 비동기, 8초 요청·10초 전체 타임아웃, 15초 캐시, 일별 상한을 적용합니다.
+
+### 별도 혼잡도 시뮬레이션
+
+`simulate_congestion`은 API 키 없이 임의 혼잡도(0~400%, 최대 10개)를 넣는 테스트 전용 도구입니다. `get_subway_congestion`의 공식 통계 응답, 저장 루틴, 경로 선택과 실제 지연값을 변경하지 않습니다. 모든 응답은 `source=simulation`, `realtime=false`, `validated_prediction=false`입니다. 지연 확률을 계산하지 않습니다.
+
+```bash
+python3 -c 'import json; print(json.dumps({"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"simulate_congestion","arguments":json.load(open("examples/simulation.json"))}}))' | \
+  curl --fail-with-body -H 'Content-Type: application/json' \
+    -H 'Accept: application/json, text/event-stream' --data-binary @- \
+    https://waynudge.helloworld0822.xyz/mcp
+```
+
+가정 정책 기본값은 혼잡도 100%를 초과한 100%p마다 역내 도보시간 25%와 정차역당 10초를 추가하는 것입니다. **실측으로 학습하거나 검증한 계수가 아니며 테스트용 여유시간 정책**입니다. `context.policy`로 임계값·도보 비율·정차당 초를 명시해 변경할 수 있고 실제 지연 예측으로 표시하지 않습니다.
+
+`base_trip_minutes`는 역내 도보를 포함한 기본 이동시간, `station_walk_minutes`는 혼잡 영향을 가정할 역내 도보·환승 시간, `remaining_train_stops`는 남은 정차 횟수입니다. `walking_factor`는 도보 부분에 한 번 적용합니다. 실시간 지연을 이미 포함한 시간에 같은 원인의 여유시간을 중복해서 더하지 마세요. 열차 혼잡률은 보행 밀도가 아니므로 두 값을 연결하는 것 자체도 이 테스트의 가정입니다.
+
+기본 40분·역내 도보 6분·정차 10회에 혼잡도 150%를 넣으면 도보 여유 45초와 정차 여유 50초, 총 95초가 추가되어 계산상 41분 35초가 됩니다. `depart_at`과 `context.target_arrival`이 있으면 도착 시각과 목표 도착 가능 여부를 계산합니다. `context.buffer_minutes`는 권장 출발 시각에서 별도로 차감합니다.
+
+`boarding`은 다음 열차까지 남은 초와 승강장까지 걷는 분을 사용해 해당 가정에서 탈 수 있는지 비교합니다. 열차를 놓치는 경우 다음 열차 간격이 없으므로 도착 시각·목표 도착 여부·도보 대비 유불리는 `null`입니다. `walking_alternative_minutes`는 전체 구간을 걸을 때의 기본 소요시간이며 개인 도보 속도를 적용해 도보 도착 가능 여부를 별도로 계산합니다. 확률이나 실제 탑승 보장을 뜻하지 않습니다.
 
 ## 모델 에이전트 예약 알림
 
