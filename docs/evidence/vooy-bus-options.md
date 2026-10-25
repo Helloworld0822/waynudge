@@ -21,3 +21,13 @@ The user subsequently requested the production update. `cargo fmt --check`, `car
 The previous server-version limitation is now resolved at the public MCP endpoint. Sent the JSON example directly from `.agents/skills/compare-bus-options/SKILL.md` to `https://waynudge.helloworld0822.xyz/mcp`. The real HTTP tool call succeeded: bus total 1800 seconds, incremental road delay 600 seconds, youth fare 900 won, selected option `walk`. The report retained `realtime=false`; these remain explicit synthetic inputs, not live traffic or verified tariffs.
 
 The Vooy recipe remains the saved edited draft described above. No release button was pressed. Its browser conversation was not repeated after deployment; refreshing cached tool schemas may be necessary in Vooy.
+
+## Final revalidation and release
+
+The user explicitly requested revalidation followed by release. Four real public MCP checks passed: adult 1500 won, youth 900 won and child 500 won with the same 600-second synthetic road delay, plus exclusion of a bus marked boarding unavailable.
+
+Vooy initially retained the previous MCP tool schema. Reconnected the same public MCP URL, validated its 14 tools and repaired the recipe's obsolete connection reference. Applied a service-list-only proposal containing current `rmcp` and `카카오맵`. Confirmed the entire 8618-character instruction body was unchanged. After reloading, these were the only two checked services.
+
+The actual Playwright-driven Vooy conversation then returned the correct synthetic comparison: bus 30 minutes including 10 minutes additional road delay, 2 minutes walking, youth fare 900 won; walking alternative 25 minutes and 0 won; walking recommended. It labeled the inputs as synthetic and the fares as unverified, applied the road delay only to the bus and did not claim to save real locations or routines. The UI reported two tool invocations.
+
+Clicked `출시`, retained the `이동수단` category and confirmed `출시하기`. After reloading, the UI displayed `출시`, `검토 대기` and the `출시 취소` button. Release submission is complete; public store listing remains subject to Vooy review. The owned browser was closed after capturing the final UI state.
