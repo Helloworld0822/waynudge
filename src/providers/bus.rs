@@ -8,6 +8,8 @@ pub struct BusProvider {
     kind: BusKind,
     key: String,
     http: LiveHttp,
+    #[cfg(test)]
+    endpoint: Option<String>,
 }
 impl BusProvider {
     pub fn new(kind: BusKind, key: String, daily_limit: u32) -> Result<Self> {
@@ -35,6 +37,8 @@ impl BusProvider {
             kind,
             key,
             http: LiveHttp::new(daily_limit)?,
+            #[cfg(test)]
+            endpoint: None,
         })
     }
     pub async fn arrivals(&self, query: &BusQuery) -> Result<BusArrivals> {
@@ -47,6 +51,8 @@ impl BusProvider {
                 "https://apis.data.go.kr/6410000/busarrivalservice/v2/getBusArrivalListv2"
             }
         };
+        #[cfg(test)]
+        let endpoint = self.endpoint.as_deref().unwrap_or(endpoint);
         let mut url = reqwest::Url::parse(endpoint).map_err(|_| Error::Provider)?;
         {
             let mut pairs = url.query_pairs_mut();
@@ -72,14 +78,16 @@ impl BusProvider {
                 }
             }
         }
-        let bytes = self
+        let fetched = self
             .http
-            .get(
+            .get_with_timestamp(
                 url,
                 format!("{:?}:{}:{:?}", self.kind, query.station_id, query.city_code),
             )
             .await?;
-        wire::parse(&bytes, query)
+        let mut report = wire::parse(&fetched.bytes, query)?;
+        report.collected_at = fetched.fetched_at;
+        Ok(report)
     }
 }
 #[cfg(test)]

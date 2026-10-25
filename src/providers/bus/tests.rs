@@ -61,3 +61,50 @@ fn upstream_error_and_missing_city_are_rejected() -> Result<()> {
     assert!(q.validate().is_err());
     Ok(())
 }
+
+#[tokio::test]
+async fn cached_arrivals_preserve_actual_retrieval_time_and_live_seats()
+-> std::result::Result<(), Box<dyn std::error::Error>> {
+    // Given
+    use std::sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    };
+    let calls = Arc::new(AtomicUsize::new(0));
+    let count = calls.clone();
+    let app = axum::Router::new().route("/", axum::routing::get(move || {
+        count.fetch_add(1, Ordering::SeqCst);
+        async { axum::Json(json!({"response":{"msgHeader":{"resultCode":0},"msgBody":{"busArrivalList":[{"routeId":234000016,"predictTime1":3,"remainSeatCnt1":0,"crowded1":4}]}}})) }
+    }));
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
+    let address = listener.local_addr()?;
+    let server = tokio::spawn(async move { axum::serve(listener, app).await });
+    let mut provider = BusProvider::new(BusKind::Gyeonggi, "test-key".into(), 1)?;
+    provider.endpoint = Some(format!("http://{address}/"));
+    let original = provider.arrivals(&query(BusKind::Gyeonggi)).await?;
+    // When
+    let cached = provider.arrivals(&query(BusKind::Gyeonggi)).await?;
+    // Then
+    assert_eq!(cached.collected_at, original.collected_at);
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+    assert_eq!(cached.arrivals[0].remaining_seats, Some(0));
+    assert!(matches!(
+        cached.arrivals[0].crowding,
+        Some(BusCrowding::VeryCrowded)
+    ));
+    server.abort();
+    Ok(())
+}
+
+#[test]
+fn unknown_bus_occupancy_remains_unknown() -> Result<()> {
+    // Given
+    let payload = json!({"response":{"msgHeader":{"resultCode":0},"msgBody":{"busArrivalList":[{"routeId":234000016,"predictTime1":3,"remainSeatCnt1":-1,"crowded1":99}]}}});
+    // When
+    let report = wire::parse(&serde_json::to_vec(&payload)?, &query(BusKind::Gyeonggi))?;
+    // Then
+    assert_eq!(report.arrivals[0].remaining_seats, None);
+    assert!(report.arrivals[0].crowding.is_none());
+    assert_eq!(report.arrivals[0].crowding_code.as_deref(), Some("99"));
+    Ok(())
+}

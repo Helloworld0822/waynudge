@@ -1,5 +1,5 @@
 use crate::error::{Error, Result, invalid};
-use chrono::{NaiveDate, Utc};
+use chrono::{DateTime, NaiveDate, Utc};
 use std::{
     collections::HashMap,
     sync::Arc,
@@ -20,7 +20,12 @@ struct Client {
 struct State {
     day: NaiveDate,
     used: u32,
-    cache: HashMap<String, (Instant, Vec<u8>)>,
+    cache: HashMap<String, (Instant, Fetched)>,
+}
+#[derive(Clone)]
+pub(super) struct Fetched {
+    pub bytes: Vec<u8>,
+    pub fetched_at: DateTime<Utc>,
 }
 impl LiveHttp {
     pub fn new(limit: u32) -> Result<Self> {
@@ -53,11 +58,18 @@ impl LiveHttp {
         })
     }
     pub async fn get(&self, url: reqwest::Url, cache_key: String) -> Result<Vec<u8>> {
+        Ok(self.get_with_timestamp(url, cache_key).await?.bytes)
+    }
+    pub async fn get_with_timestamp(
+        &self,
+        url: reqwest::Url,
+        cache_key: String,
+    ) -> Result<Fetched> {
         tokio::time::timeout(Duration::from_secs(10), self.fetch(url, cache_key))
             .await
             .map_err(|_| Error::Provider)?
     }
-    async fn fetch(&self, url: reqwest::Url, cache_key: String) -> Result<Vec<u8>> {
+    async fn fetch(&self, url: reqwest::Url, cache_key: String) -> Result<Fetched> {
         let mut state = self.inner.state.lock().await;
         let today = Utc::now().date_naive();
         if state.day != today {
@@ -94,9 +106,13 @@ impl LiveHttp {
         if state.cache.len() >= 64 {
             state.cache.clear();
         }
+        let fetched = Fetched {
+            bytes,
+            fetched_at: Utc::now(),
+        };
         state
             .cache
-            .insert(cache_key, (Instant::now(), bytes.clone()));
-        Ok(bytes)
+            .insert(cache_key, (Instant::now(), fetched.clone()));
+        Ok(fetched)
     }
 }

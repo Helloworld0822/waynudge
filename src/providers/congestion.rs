@@ -1,3 +1,4 @@
+mod discovery;
 mod model;
 mod wire;
 use super::live_http::LiveHttp;
@@ -13,6 +14,7 @@ pub struct SubwayCongestion {
     key: String,
     http: LiveHttp,
     endpoint: reqwest::Url,
+    auto_discovery: bool,
 }
 impl SubwayCongestion {
     pub fn new(key: String, daily_limit: u32) -> Result<Self> {
@@ -33,21 +35,42 @@ impl SubwayCongestion {
             key.to_string()
         };
         Ok(Self {
+            auto_discovery: false,
             key,
             http: LiveHttp::historical(daily_limit)?,
             endpoint: reqwest::Url::parse(ENDPOINT).map_err(|_| Error::Provider)?,
         })
     }
+    pub(super) fn with_environment(mut self) -> Result<Self> {
+        let value = std::env::var("SUBWAY_CONGESTION_AUTO_DISCOVERY")
+            .map(Some)
+            .or_else(|error| match error {
+                std::env::VarError::NotPresent => Ok(None),
+                std::env::VarError::NotUnicode(_) => Err(invalid(
+                    "SUBWAY_CONGESTION_AUTO_DISCOVERY must be true or false",
+                )),
+            })?;
+        self.auto_discovery = discovery::enabled(value.as_deref())?;
+        Ok(self)
+    }
     pub async fn congestion(&self, query: &CongestionQuery) -> Result<SubwayCongestionReport> {
         query.validate()?;
-        let mut url = self.endpoint.clone();
+        let (mut url, dataset_as_of) = if self.auto_discovery {
+            let catalog = reqwest::Url::parse(discovery::CATALOG).map_err(|_| Error::Provider)?;
+            let bytes = self.http.get(catalog, "catalog".into()).await?;
+            discovery::select(&bytes, chrono::Utc::now().date_naive())?
+        } else {
+            (self.endpoint.clone(), DATASET_AS_OF.to_string())
+        };
         url.query_pairs_mut()
             .append_pair("serviceKey", &self.key)
             .append_pair("page", "1")
             .append_pair("perPage", "2000")
             .append_pair("returnType", "JSON");
-        let bytes = self.http.get(url, DATASET_AS_OF.into()).await?;
-        wire::parse(&bytes, query)
+        let bytes = self.http.get(url, dataset_as_of.clone()).await?;
+        let mut report = wire::parse(&bytes, query)?;
+        report.dataset_as_of = dataset_as_of;
+        Ok(report)
     }
 }
 #[cfg(test)]

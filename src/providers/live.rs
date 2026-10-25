@@ -1,7 +1,8 @@
 use super::*;
 impl Provider {
     pub fn with_subway_congestion(mut self, key: String, daily_limit: u32) -> Result<Self> {
-        self.congestion = Some(congestion::SubwayCongestion::new(key, daily_limit)?);
+        self.congestion =
+            Some(congestion::SubwayCongestion::new(key, daily_limit)?.with_environment()?);
         Ok(self)
     }
     pub async fn subway_congestion(
