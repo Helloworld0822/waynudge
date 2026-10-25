@@ -14,6 +14,8 @@ struct Client {
     http: reqwest::Client,
     limit: u32,
     state: Mutex<State>,
+    cache_ttl: Duration,
+    max_bytes: usize,
 }
 struct State {
     day: NaiveDate,
@@ -22,6 +24,12 @@ struct State {
 }
 impl LiveHttp {
     pub fn new(limit: u32) -> Result<Self> {
+        Self::configured(limit, Duration::from_secs(15), 524_288)
+    }
+    pub fn historical(limit: u32) -> Result<Self> {
+        Self::configured(limit, Duration::from_secs(3600), 4_194_304)
+    }
+    fn configured(limit: u32, cache_ttl: Duration, max_bytes: usize) -> Result<Self> {
         if !(1..=100_000).contains(&limit) {
             return Err(invalid("live API daily limit must be 1..100000"));
         }
@@ -34,6 +42,8 @@ impl LiveHttp {
             inner: Arc::new(Client {
                 http,
                 limit,
+                cache_ttl,
+                max_bytes,
                 state: Mutex::new(State {
                     day: Utc::now().date_naive(),
                     used: 0,
@@ -57,7 +67,7 @@ impl LiveHttp {
         }
         state
             .cache
-            .retain(|_, (at, _)| at.elapsed() < Duration::from_secs(15));
+            .retain(|_, (at, _)| at.elapsed() < self.inner.cache_ttl);
         if let Some((_, bytes)) = state.cache.get(&cache_key) {
             return Ok(bytes.clone());
         }
@@ -76,7 +86,7 @@ impl LiveHttp {
             .map_err(|_| Error::Provider)?;
         let mut bytes = Vec::new();
         while let Some(chunk) = response.chunk().await.map_err(|_| Error::Provider)? {
-            if bytes.len().saturating_add(chunk.len()) > 524_288 {
+            if bytes.len().saturating_add(chunk.len()) > self.inner.max_bytes {
                 return Err(Error::Provider);
             }
             bytes.extend_from_slice(&chunk);

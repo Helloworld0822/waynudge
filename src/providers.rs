@@ -14,6 +14,7 @@ use std::{
 };
 use tokio::sync::Mutex;
 pub mod bus;
+pub mod congestion;
 mod live;
 mod live_http;
 pub mod seoul;
@@ -28,6 +29,7 @@ pub struct Provider {
     seoul: Option<SeoulSubway>,
     tago: Option<BusProvider>,
     gyeonggi: Option<BusProvider>,
+    congestion: Option<congestion::SubwayCongestion>,
 }
 struct ODsay {
     key: String,
@@ -51,6 +53,7 @@ impl Provider {
             seoul: None,
             tago: None,
             gyeonggi: None,
+            congestion: None,
         }
     }
     pub fn mock_with_delay(minutes: u32) -> Result<Self> {
@@ -63,6 +66,7 @@ impl Provider {
             seoul: None,
             tago: None,
             gyeonggi: None,
+            congestion: None,
         })
     }
     pub fn odsay(api_key: String, daily_limit: u32, cache_seconds: u64) -> Result<Self> {
@@ -81,6 +85,7 @@ impl Provider {
             seoul: None,
             tago: None,
             gyeonggi: None,
+            congestion: None,
             external: Some(Arc::new(ODsay {
                 key: api_key,
                 client,

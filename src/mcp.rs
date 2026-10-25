@@ -85,6 +85,21 @@ impl Mcp {
             .map_err(tool_error)
     }
 
+    #[tool(description="Get Seoul Metro lines 1..8 historical 30-minute average train congestion, NOT real-time occupancy. Provide station, line, day_type (weekday/saturday/sunday), time (HH:MM Asia/Seoul), and optional direction (up/down). Always report dataset_as_of and realtime=false.",output_schema=schema_for_type::<crate::providers::congestion::SubwayCongestionReport>(),annotations(read_only_hint=true))]
+    async fn get_subway_congestion(
+        &self,
+        context: RequestContext<RoleServer>,
+        Parameters(input): Parameters<crate::providers::congestion::CongestionQuery>,
+    ) -> Result<Json<crate::providers::congestion::SubwayCongestionReport>, ErrorData> {
+        user(&context)?;
+        self.service
+            .provider
+            .subway_congestion(&input)
+            .await
+            .map(Json)
+            .map_err(tool_error)
+    }
+
     #[tool(description = "Create or update a commute routine after explicit user confirmation.",
         output_schema = schema_for_type::<MutationResult>(),
         annotations(read_only_hint = false, destructive_hint = false, idempotent_hint = true))]
@@ -222,7 +237,7 @@ mod tests {
         // When: a client discovers their schemas.
         let tools = router.list_all();
         // Then: each tool declares structured output and no caller-supplied identity.
-        assert_eq!(tools.len(), 10);
+        assert_eq!(tools.len(), 11);
         for tool in tools {
             assert!(tool.output_schema.is_some(), "{}", tool.name);
             assert!(

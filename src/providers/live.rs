@@ -1,5 +1,16 @@
 use super::*;
 impl Provider {
+    pub fn with_subway_congestion(mut self, key: String, daily_limit: u32) -> Result<Self> {
+        self.congestion = Some(congestion::SubwayCongestion::new(key, daily_limit)?);
+        Ok(self)
+    }
+    pub async fn subway_congestion(
+        &self,
+        query: &congestion::CongestionQuery,
+    ) -> Result<congestion::SubwayCongestionReport> {
+        query.validate()?;
+        self.congestion.as_ref().ok_or_else(|| invalid("SUBWAY_CONGESTION_SERVICE_KEY is not configured; apply for Seoul Metro congestion API at data.go.kr/data/15071311/fileData.do"))?.congestion(query).await
+    }
     pub fn with_seoul(mut self, key: String, daily_limit: u32) -> Result<Self> {
         self.seoul = Some(SeoulSubway::new(key, daily_limit)?);
         Ok(self)

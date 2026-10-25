@@ -51,6 +51,16 @@ async fn main() -> anyhow::Result<()> {
         Ok(_) | Err(_) => provider,
     };
     let mut provider = provider;
+    if let Ok(key) = env::var("SUBWAY_CONGESTION_SERVICE_KEY")
+        && !key.trim().is_empty()
+    {
+        provider = provider.with_subway_congestion(
+            key,
+            env::var("SUBWAY_CONGESTION_DAILY_LIMIT")
+                .unwrap_or_else(|_| "100".into())
+                .parse()?,
+        )?;
+    }
     let tago_key = env::var("TAGO_SERVICE_KEY").unwrap_or_default();
     let gyeonggi_key = env::var("GYEONGGI_SERVICE_KEY")
         .ok()

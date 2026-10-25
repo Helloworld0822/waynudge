@@ -49,6 +49,7 @@ pub fn router(service: Service, auth: Auth) -> Router {
         .route("/api/feedback", post(feedback))
         .route("/api/alerts", get(alerts))
         .route("/api/subway/arrivals", post(subway_arrivals))
+        .route("/api/subway/congestion", post(subway_congestion))
         .route("/api/bus/arrivals", post(bus_arrivals))
         .route("/api/alerts/evaluate", post(evaluate))
         .nest_service("/mcp", mcp)
@@ -65,6 +66,12 @@ async fn subway_arrivals(
     Json(query): Json<crate::providers::seoul::SubwayQuery>,
 ) -> Result<Json<crate::providers::seoul::SubwayArrivals>> {
     s.provider.subway_arrivals(&query).await.map(Json)
+}
+async fn subway_congestion(
+    State(s): State<Service>,
+    Json(query): Json<crate::providers::congestion::CongestionQuery>,
+) -> Result<Json<crate::providers::congestion::SubwayCongestionReport>> {
+    s.provider.subway_congestion(&query).await.map(Json)
 }
 async fn bus_arrivals(
     State(s): State<Service>,
